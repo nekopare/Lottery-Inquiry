@@ -10,10 +10,16 @@
   <div class="app">
     <header class="header">
       <h1>彩票查询</h1>
-      <p class="subtitle">超级大乐透开奖结果查询</p>
+      <p class="subtitle">大乐透 · 双色球 开奖结果查询</p>
     </header>
 
     <main class="main">
+      <!-- 彩种切换 -->
+      <div class="type-tabs">
+        <button class="type-tab active" data-type="dlt">大乐透</button>
+        <button class="type-tab" data-type="ssq">双色球</button>
+      </div>
+
       <!-- 最新一期 -->
       <section class="section" id="latest-section">
         <h2>最新开奖</h2>
@@ -45,6 +51,8 @@
           <div class="form-group" id="year-group" style="display:none;">
             <label for="query-year">选择年份</label>
             <select id="query-year">
+              <option value="2026">2026</option>
+              <option value="2025">2025</option>
               <option value="2024">2024</option>
               <option value="2023">2023</option>
               <option value="2022">2022</option>

@@ -1,6 +1,13 @@
 // API 配置
 const API_URL = "https://api.huiniao.top/interface/home/lotteryHistory";
-const LOTTERY_TYPE = "dlt";
+
+// 彩种配置
+const LOTTERY_CONFIG = {
+  dlt: { name: "大乐透", type: "dlt", frontCount: 5, backCount: 2, startYear: 2015 },
+  ssq: { name: "双色球", type: "ssq", frontCount: 6, backCount: 1, startYear: 2003 }
+};
+
+let currentType = "dlt";
 
 // 工具函数
 function pad(value) {
@@ -15,25 +22,13 @@ function formatDate(date) {
   ].join("-");
 }
 
-function parseNumbers(value) {
-  if (Array.isArray(value)) {
-    return value.map(String);
-  }
-  if (!value) return [];
-  return String(value)
-    .split(/[,\s+|]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 // API 请求
 async function fetchLatest() {
+  const config = LOTTERY_CONFIG[currentType];
   try {
-    const response = await fetch(
-      `${API_URL}?type=${LOTTERY_TYPE}&page=1&limit=1`
-    );
+    const response = await fetch(`${API_URL}?type=${config.type}&page=1&limit=1`);
     const data = await response.json();
-    return extractLatest(data);
+    return extractLatest(data, config);
   } catch (error) {
     console.error("获取最新开奖失败:", error);
     return null;
@@ -41,31 +36,29 @@ async function fetchLatest() {
 }
 
 async function fetchHistory(queryType, queryValue) {
+  const config = LOTTERY_CONFIG[currentType];
   try {
-    let url = `${API_URL}?type=${LOTTERY_TYPE}&limit=20`;
+    let url = `${API_URL}?type=${config.type}&limit=20`;
 
     if (queryType === "year") {
-      // 年份查询需要多页获取
       const results = [];
-      for (let page = 1; page <= 10; page++) {
+      for (let page = 1; page <= 20; page++) {
         const response = await fetch(`${url}&page=${page}`);
         const data = await response.json();
         const list = extractList(data);
         if (!list.length) break;
 
         for (const item of list) {
-          const mapped = mapResult(item);
+          const mapped = mapResult(item, config);
           if (mapped && mapped.drawDate.startsWith(queryValue)) {
             results.push(mapped);
           }
         }
-
         if (list.length < 20) break;
       }
       return results;
     } else if (queryType === "issue") {
-      // 按期号查询
-      for (let page = 1; page <= 50; page++) {
+      for (let page = 1; page <= 100; page++) {
         const response = await fetch(`${url}&page=${page}`);
         const data = await response.json();
         const list = extractList(data);
@@ -74,13 +67,11 @@ async function fetchHistory(queryType, queryValue) {
         const found = list.find(
           (item) => String(item.code || item.issue) === String(queryValue)
         );
-        if (found) return [mapResult(found)];
-
+        if (found) return [mapResult(found, config)];
         if (list.length < 20) break;
       }
       return [];
     } else {
-      // 按日期查询
       for (let page = 1; page <= 10; page++) {
         const response = await fetch(`${url}&page=${page}`);
         const data = await response.json();
@@ -91,8 +82,7 @@ async function fetchHistory(queryType, queryValue) {
           const date = String(item.day || item.drawDate || "").slice(0, 10);
           return date === queryValue;
         });
-        if (found) return [mapResult(found)];
-
+        if (found) return [mapResult(found, config)];
         if (list.length < 20) break;
       }
       return [];
@@ -106,8 +96,6 @@ async function fetchHistory(queryType, queryValue) {
 async function fetchSameDay(baseDate) {
   const results = [];
   const date = new Date(baseDate);
-
-  // 查询上月、上六月、上年同日
   const periods = [
     { months: -1, label: "上月同日" },
     { months: -6, label: "六个月前同日" },
@@ -118,7 +106,6 @@ async function fetchSameDay(baseDate) {
     const target = new Date(date);
     target.setMonth(target.getMonth() + period.months);
     const targetDate = formatDate(target);
-
     const history = await fetchHistory("date", targetDate);
     results.push({
       label: period.label,
@@ -127,7 +114,6 @@ async function fetchSameDay(baseDate) {
       message: history.length ? null : "当日无开奖"
     });
   }
-
   return results;
 }
 
@@ -153,26 +139,34 @@ function extractList(data) {
   return [];
 }
 
-function extractLatest(data) {
+function extractLatest(data, config) {
   if (!data) return null;
+
+  // 优先取 last 字段（最新开奖）
+  if (data.last) return mapResult(data.last, config);
+  if (data.data?.last) return mapResult(data.data.last, config);
+
   const list = extractList(data);
-  return list.length ? mapResult(list[0]) : null;
+  return list.length ? mapResult(list[0], config) : null;
 }
 
-function mapResult(raw) {
+function mapResult(raw, config) {
   if (!raw) return null;
 
-  const frontNumbers = [raw.one, raw.two, raw.three, raw.four, raw.five]
+  const allFields = [raw.one, raw.two, raw.three, raw.four, raw.five, raw.six, raw.seven]
     .filter(Boolean)
     .map(String);
-  const backNumbers = [raw.six, raw.seven].filter(Boolean).map(String);
+
+  const frontNumbers = allFields.slice(0, config.frontCount);
+  const backNumbers = allFields.slice(config.frontCount, config.frontCount + config.backCount);
 
   return {
+    lotteryType: currentType,
+    lotteryName: config.name,
     issue: String(raw.code || raw.issue || "").trim(),
     drawDate: String(raw.day || raw.drawDate || raw.date || "").slice(0, 10),
     frontNumbers,
     backNumbers,
-    numbers: frontNumbers.concat(backNumbers),
     salesAmount: raw.salesAmount || "",
     poolAmount: raw.poolAmount || "",
     raw
@@ -181,19 +175,18 @@ function mapResult(raw) {
 
 // UI 渲染
 function renderBalls(frontNumbers, backNumbers, size = "normal") {
-  const ballSize = size === "small" ? "small" : "";
+  const cls = size === "small" ? "small" : "";
   return `
     <div class="numbers">
-      ${frontNumbers.map((n) => `<span class="ball red ${ballSize}">${n}</span>`).join("")}
+      ${frontNumbers.map((n) => `<span class="ball red ${cls}">${n}</span>`).join("")}
       <span class="separator">|</span>
-      ${backNumbers.map((n) => `<span class="ball blue ${ballSize}">${n}</span>`).join("")}
+      ${backNumbers.map((n) => `<span class="ball blue ${cls}">${n}</span>`).join("")}
     </div>
   `;
 }
 
 function renderLatest(result) {
   const container = document.getElementById("latest-result");
-
   if (!result) {
     container.innerHTML = '<div class="empty">暂无开奖数据</div>';
     return;
@@ -202,6 +195,7 @@ function renderLatest(result) {
   container.innerHTML = `
     <div class="draw-header">
       <div class="draw-info">
+        <span class="lottery-tag">${result.lotteryName}</span>
         <strong>第 ${result.issue} 期</strong>
         <span>${result.drawDate}</span>
       </div>
@@ -216,7 +210,6 @@ function renderLatest(result) {
 
 function renderHistoryList(results) {
   const container = document.getElementById("history-result");
-
   if (!results.length) {
     container.innerHTML = '<div class="empty">未查询到结果</div>';
     return;
@@ -224,10 +217,8 @@ function renderHistoryList(results) {
 
   container.innerHTML = `
     <div class="history-list">
-      ${results
-        .map(
-          (r) => `
-        <div class="history-item" onclick="showDetail('${r.issue}', '${r.drawDate}')">
+      ${results.map((r) => `
+        <div class="history-item" onclick="showDetail('${r.issue}')">
           <div class="draw-header">
             <div class="draw-info">
               <strong>第 ${r.issue} 期</strong>
@@ -236,16 +227,13 @@ function renderHistoryList(results) {
           </div>
           ${renderBalls(r.frontNumbers, r.backNumbers, "small")}
         </div>
-      `
-        )
-        .join("")}
+      `).join("")}
     </div>
   `;
 }
 
 function renderSameDay(results) {
   const container = document.getElementById("same-day-result");
-
   if (!results.length) {
     container.innerHTML = '<div class="empty">请先选择基准日期</div>';
     return;
@@ -253,34 +241,24 @@ function renderSameDay(results) {
 
   container.innerHTML = `
     <div class="same-day-grid">
-      ${results
-        .map(
-          (item) => `
+      ${results.map((item) => `
         <div class="same-day-item">
-          <h3>
-            ${item.label} (${item.targetDate})
-          </h3>
-          ${
-            item.result
-              ? renderBalls(item.result.frontNumbers, item.result.backNumbers, "small")
-              : `<div class="empty">${item.message || "无数据"}</div>`
-          }
+          <h3>${item.label} (${item.targetDate})</h3>
+          ${item.result
+            ? renderBalls(item.result.frontNumbers, item.result.backNumbers, "small")
+            : `<div class="empty">${item.message || "无数据"}</div>`}
         </div>
-      `
-        )
-        .join("")}
+      `).join("")}
     </div>
   `;
 }
 
-async function showDetail(issue, date) {
+async function showDetail(issue) {
   const modal = document.getElementById("detail-modal");
   const content = document.getElementById("detail-content");
-
   content.innerHTML = '<div class="loading">加载中...</div>';
   modal.classList.add("active");
 
-  // 获取详细数据
   const results = await fetchHistory("issue", issue);
   const result = results.length ? results[0] : null;
 
@@ -290,7 +268,7 @@ async function showDetail(issue, date) {
   }
 
   content.innerHTML = `
-    <h2>第 ${result.issue} 期详情</h2>
+    <h2>${result.lotteryName} 第 ${result.issue} 期</h2>
     <p>开奖日期: ${result.drawDate}</p>
     ${renderBalls(result.frontNumbers, result.backNumbers)}
     <div class="draw-meta">
@@ -300,8 +278,25 @@ async function showDetail(issue, date) {
   `;
 }
 
+// 彩种切换
+function switchType(type) {
+  if (type === currentType) return;
+  currentType = type;
+
+  document.querySelectorAll(".type-tab").forEach((tab) => {
+    tab.classList.toggle("active", tab.dataset.type === type);
+  });
+
+  loadLatest();
+}
+
 // 事件处理
 function initEventListeners() {
+  // 彩种切换
+  document.querySelectorAll(".type-tab").forEach((tab) => {
+    tab.addEventListener("click", () => switchType(tab.dataset.type));
+  });
+
   const queryTypeSelect = document.getElementById("query-type");
   const dateGroup = document.getElementById("date-group");
   const issueGroup = document.getElementById("issue-group");
@@ -360,7 +355,6 @@ function initEventListeners() {
     btn.textContent = "查询同日";
   });
 
-  // 关闭模态框
   document.querySelector(".close-btn").addEventListener("click", () => {
     document.getElementById("detail-modal").classList.remove("active");
   });
@@ -372,20 +366,20 @@ function initEventListeners() {
   });
 }
 
-// 初始化
-async function init() {
-  // 设置默认日期
-  const today = formatDate(new Date());
-  document.getElementById("query-date").value = today;
-  document.getElementById("base-date").value = today;
-
-  // 初始化事件监听
-  initEventListeners();
-
-  // 加载最新开奖
+async function loadLatest() {
+  document.getElementById("latest-result").innerHTML = '<div class="loading">加载中...</div>';
   const latest = await fetchLatest();
   renderLatest(latest);
 }
 
-// 页面加载完成后初始化
+// 初始化
+async function init() {
+  const today = formatDate(new Date());
+  document.getElementById("query-date").value = today;
+  document.getElementById("base-date").value = today;
+
+  initEventListeners();
+  await loadLatest();
+}
+
 document.addEventListener("DOMContentLoaded", init);
