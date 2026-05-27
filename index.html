@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>彩票查询</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>彩票查询</h1>
+      <p class="subtitle">超级大乐透开奖结果查询</p>
+    </header>
+
+    <main class="main">
+      <!-- 最新一期 -->
+      <section class="section" id="latest-section">
+        <h2>最新开奖</h2>
+        <div id="latest-result" class="result-card">
+          <div class="loading">加载中...</div>
+        </div>
+      </section>
+
+      <!-- 历史查询 -->
+      <section class="section">
+        <h2>历史查询</h2>
+        <div class="query-form">
+          <div class="form-group">
+            <label for="query-type">查询方式</label>
+            <select id="query-type">
+              <option value="date">按日期</option>
+              <option value="issue">按期号</option>
+              <option value="year">按年份</option>
+            </select>
+          </div>
+          <div class="form-group" id="date-group">
+            <label for="query-date">选择日期</label>
+            <input type="date" id="query-date">
+          </div>
+          <div class="form-group" id="issue-group" style="display:none;">
+            <label for="query-issue">输入期号</label>
+            <input type="text" id="query-issue" placeholder="例如: 2024001">
+          </div>
+          <div class="form-group" id="year-group" style="display:none;">
+            <label for="query-year">选择年份</label>
+            <select id="query-year">
+              <option value="2024">2024</option>
+              <option value="2023">2023</option>
+              <option value="2022">2022</option>
+              <option value="2021">2021</option>
+              <option value="2020">2020</option>
+            </select>
+          </div>
+          <button id="query-btn" class="btn">查询</button>
+        </div>
+        <div id="history-result" class="result-card"></div>
+      </section>
+
+      <!-- 同日查询 -->
+      <section class="section">
+        <h2>同日查询</h2>
+        <div class="same-day-section">
+          <div class="form-group">
+            <label for="base-date">基准日期</label>
+            <input type="date" id="base-date">
+          </div>
+          <button id="same-day-btn" class="btn">查询同日</button>
+        </div>
+        <div id="same-day-result" class="result-card"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <p>数据来源: 公开开奖接口 | 中国体育彩票开奖结果为最终依据</p>
+    </footer>
+  </div>
+
+  <div class="modal" id="detail-modal">
+    <div class="modal-content">
+      <span class="close-btn">&times;</span>
+      <div id="detail-content"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
