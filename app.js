@@ -287,6 +287,12 @@ function switchType(type) {
     tab.classList.toggle("active", tab.dataset.type === type);
   });
 
+  // 切换走势图
+  const iframe = document.getElementById("trend-iframe");
+  if (iframe) {
+    iframe.src = `https://lotto.sina.cn/trend/qxc_qlc_proxy.d.html?actionType=chzs&lottoType=${type}`;
+  }
+
   loadLatest();
 }
 
