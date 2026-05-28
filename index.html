@@ -3,96 +3,219 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>彩票查询</title>
+  <title>彩票开奖</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
-    <header class="header">
-      <h1>彩票查询</h1>
-      <p class="subtitle">大乐透 · 双色球 开奖结果查询</p>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-icon">★</span>
+        <span>彩票开奖</span>
+      </div>
+      <nav class="nav-tabs" aria-label="彩种导航">
+        <button class="nav-tab" data-nav="home">首页</button>
+        <button class="nav-tab lottery-switch active" data-type="dlt">大乐透</button>
+        <button class="nav-tab lottery-switch" data-type="ssq">双色球</button>
+      </nav>
+      <div class="top-actions">
+        <a href="#analytics-section" id="top-stats-link">数据统计</a>
+        <a href="#history-section">历史记录</a>
+      </div>
     </header>
 
-    <main class="main">
-      <!-- 彩种切换 -->
-      <div class="type-tabs">
-        <button class="type-tab active" data-type="dlt">大乐透</button>
-        <button class="type-tab" data-type="ssq">双色球</button>
-      </div>
+    <main class="dashboard">
+      <section class="hero-grid">
+        <div class="latest-panel">
+          <div id="latest-comparison" class="latest-comparison">
+            <div class="loading">最新开奖加载中...</div>
+          </div>
+        </div>
 
-      <!-- 最新一期 -->
-      <section class="section" id="latest-section">
-        <h2>最新开奖</h2>
-        <div id="latest-result" class="result-card">
-          <div class="loading">加载中...</div>
+        <aside class="quick-panel">
+          <h2>快捷查询</h2>
+          <div class="quick-field">
+            <label for="query-issue">按期号查询</label>
+            <input type="text" id="query-issue" placeholder="例如 2026058">
+          </div>
+          <div class="quick-field">
+            <label for="query-date">按日期查询</label>
+            <input type="date" id="query-date">
+          </div>
+          <button id="quick-query-btn" class="primary-btn">立即查询</button>
+        </aside>
+      </section>
+
+      <section class="analytics-panel" id="analytics-section">
+        <div class="section-toolbar">
+          <div class="analysis-tabs" role="tablist" aria-label="分析类型">
+            <button class="analysis-tab active" data-analysis="trend">走势分析</button>
+            <button class="analysis-tab" data-analysis="numbers">号码统计</button>
+            <button class="analysis-tab" data-analysis="distribution">分布分析</button>
+            <button class="analysis-tab badge">即将上线</button>
+          </div>
+          <div class="trend-controls">
+            <select id="trend-limit" aria-label="走势图期数">
+              <option value="30">近30期</option>
+              <option value="50" selected>近50期</option>
+              <option value="80">近80期</option>
+            </select>
+            <label class="height-control" for="trend-height">
+              <span>图表高度</span>
+              <input type="range" id="trend-height" min="8" max="30" value="8">
+            </label>
+            <button id="trend-expand-btn" class="ghost-btn">展开更多</button>
+            <div class="segmented">
+              <button class="seg-btn active" data-type="dlt">大乐透</button>
+              <button class="seg-btn" data-type="ssq">双色球</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="trend-view" class="analysis-view active">
+          <div class="chart-title">
+            <div>
+              <span class="chart-icon">▣</span>
+              <strong id="trend-title">大乐透走势</strong>
+            </div>
+            <div class="legend">
+              <span><i class="dot red"></i>前区号码</span>
+              <span><i class="dot blue"></i>后区号码</span>
+            </div>
+          </div>
+
+          <div id="trend-result" class="trend-card">
+            <div class="loading">走势图加载中...</div>
+          </div>
+        </div>
+
+        <div id="numbers-view" class="analysis-view">
+          <div class="number-stats-head">
+            <div>
+              <span class="chart-icon">▣</span>
+              <strong id="number-stats-title">大乐透号码统计</strong>
+            </div>
+            <div class="segmented stat-periods">
+              <button class="period-btn active" data-period="10">近10期</button>
+              <button class="period-btn" data-period="30">近30期</button>
+              <button class="period-btn" data-period="50">近50期</button>
+            </div>
+          </div>
+          <div id="number-stats-result" class="number-stats-page">
+            <div class="loading">统计加载中...</div>
+          </div>
+        </div>
+
+        <div id="distribution-view" class="analysis-view">
+          <div class="distribution-head">
+            <div>
+              <span class="chart-icon">▣</span>
+              <strong id="distribution-title">大乐透分布分析</strong>
+            </div>
+            <button class="export-btn" type="button">导出数据</button>
+          </div>
+          <div class="distribution-layout">
+            <aside class="distribution-menu" aria-label="分布分析类型">
+              <button class="active">正态分布</button>
+              <button>区间分布</button>
+              <button>第一位分布</button>
+              <button>第二位分布</button>
+              <button>奇偶分布</button>
+              <button>大小分布</button>
+              <button>质合分布</button>
+              <button>重号分布</button>
+              <button>连号分布</button>
+            </aside>
+            <div id="distribution-result" class="distribution-result">
+              <div class="loading">分布数据加载中...</div>
+            </div>
+          </div>
         </div>
       </section>
 
-      <!-- 走势图 -->
-      <section class="section">
-        <h2>走势图</h2>
-        <iframe id="trend-iframe" class="trend-iframe" src="https://lotto.sina.cn/trend/qxc_qlc_proxy.d.html?actionType=chzs&lottoType=dlt" frameborder="0"></iframe>
+      <section class="stats-grid" id="stats-section">
+        <article class="stat-card">
+          <div class="card-head">
+            <h2>号码热度 TOP10</h2>
+            <div class="mini-tabs">
+              <button class="active" data-stat-area="front">前区</button>
+              <button data-stat-area="back">后区</button>
+            </div>
+          </div>
+          <div id="hot-ranking" class="ranking-list">
+            <div class="loading">统计加载中...</div>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <h2>连出走势</h2>
+          <div id="repeat-summary" class="repeat-grid">
+            <div class="loading">统计加载中...</div>
+          </div>
+        </article>
+
+        <article class="stat-card">
+          <div class="card-head">
+            <h2>遗漏值 TOP10</h2>
+            <div class="mini-tabs">
+              <button class="active" data-miss-area="front">前区</button>
+              <button data-miss-area="back">后区</button>
+            </div>
+          </div>
+          <div id="miss-ranking" class="ranking-list">
+            <div class="loading">统计加载中...</div>
+          </div>
+        </article>
       </section>
 
-      <!-- 历史查询 -->
-      <section class="section">
-        <h2>历史查询</h2>
-        <div class="query-form">
-          <div class="form-group">
-            <label for="query-type">查询方式</label>
+      <section class="history-panel" id="history-section">
+        <div class="section-toolbar compact">
+          <h2>历史查询</h2>
+          <div class="history-controls">
             <select id="query-type">
               <option value="date">按日期</option>
               <option value="issue">按期号</option>
               <option value="year">按年份</option>
             </select>
+            <div id="date-group">
+              <input type="date" id="history-date">
+            </div>
+            <div id="issue-group" style="display:none;">
+              <input type="text" id="history-issue" placeholder="输入期号">
+            </div>
+            <div id="year-group" style="display:none;">
+              <select id="query-year">
+                <option value="2026">2026</option>
+                <option value="2025">2025</option>
+                <option value="2024">2024</option>
+                <option value="2023">2023</option>
+                <option value="2022">2022</option>
+                <option value="2021">2021</option>
+                <option value="2020">2020</option>
+              </select>
+            </div>
+            <button id="query-btn" class="secondary-btn">查询</button>
           </div>
-          <div class="form-group" id="date-group">
-            <label for="query-date">选择日期</label>
-            <input type="date" id="query-date">
-          </div>
-          <div class="form-group" id="issue-group" style="display:none;">
-            <label for="query-issue">输入期号</label>
-            <input type="text" id="query-issue" placeholder="例如: 2024001">
-          </div>
-          <div class="form-group" id="year-group" style="display:none;">
-            <label for="query-year">选择年份</label>
-            <select id="query-year">
-              <option value="2026">2026</option>
-              <option value="2025">2025</option>
-              <option value="2024">2024</option>
-              <option value="2023">2023</option>
-              <option value="2022">2022</option>
-              <option value="2021">2021</option>
-              <option value="2020">2020</option>
-            </select>
-          </div>
-          <button id="query-btn" class="btn">查询</button>
         </div>
-        <div id="history-result" class="result-card"></div>
+        <div id="history-result" class="history-result"></div>
       </section>
 
-      <!-- 同日查询 -->
-      <section class="section">
-        <h2>同日查询</h2>
-        <div class="same-day-section">
-          <div class="form-group">
-            <label for="base-date">基准日期</label>
+      <section class="history-panel">
+        <div class="section-toolbar compact">
+          <h2>同日查询</h2>
+          <div class="history-controls">
             <input type="date" id="base-date">
+            <button id="same-day-btn" class="secondary-btn">查询同日</button>
           </div>
-          <button id="same-day-btn" class="btn">查询同日</button>
         </div>
-        <div id="same-day-result" class="result-card"></div>
+        <div id="same-day-result" class="same-day-result"></div>
       </section>
     </main>
-
-    <footer class="footer">
-      <p>数据来源: 公开开奖接口 | 中国体育彩票开奖结果为最终依据</p>
-    </footer>
   </div>
 
   <div class="modal" id="detail-modal">
     <div class="modal-content">
-      <span class="close-btn">&times;</span>
+      <button class="close-btn" aria-label="关闭">&times;</button>
       <div id="detail-content"></div>
     </div>
   </div>
