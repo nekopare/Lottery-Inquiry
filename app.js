@@ -34,6 +34,31 @@ let statArea = "front";
 let missArea = "front";
 let currentAnalysis = "trend";
 let statsPeriod = 10;
+let trendPanelState = {
+  width: 0,
+  rows: 12
+};
+let trendResizeSession = null;
+const TREND_MIN_ROWS = 12;
+const TREND_MAX_ROWS = 30;
+const TREND_ROW_HEIGHT = 30;
+const TREND_HEADER_HEIGHT = 60;
+const TREND_CUSTOM_ROWS = 3;
+const TREND_CUSTOM_ROW_HEIGHT = 28;
+const TREND_FOOTER_HEIGHT = 24;
+const TREND_MIN_WIDTH = 980;
+
+function createCustomRowState() {
+  return {
+    front: new Set(),
+    back: new Set()
+  };
+}
+
+const customPickState = {
+  dlt: [createCustomRowState(), createCustomRowState(), createCustomRowState()],
+  ssq: [createCustomRowState(), createCustomRowState(), createCustomRowState()]
+};
 
 function pad(value) {
   return String(value).padStart(2, "0");
@@ -292,10 +317,69 @@ function getRange(max) {
   return Array.from({ length: max }, (_, index) => pad(index + 1));
 }
 
-function getVisibleTrendCount() {
-  const slider = document.getElementById("trend-height");
-  const value = Number(slider?.value || 8);
-  return Math.max(8, Math.min(value, 30));
+function getTrendRowsVisible() {
+  return Math.max(TREND_MIN_ROWS, Math.min(trendPanelState.rows, TREND_MAX_ROWS));
+}
+
+function getTrendShellHeight(rowsVisible) {
+  return TREND_HEADER_HEIGHT
+    + rowsVisible * TREND_ROW_HEIGHT
+    + TREND_CUSTOM_ROWS * TREND_CUSTOM_ROW_HEIGHT
+    + TREND_FOOTER_HEIGHT
+    + 4;
+}
+
+function ensureTrendPanelWidth() {
+  if (trendPanelState.width > 0) return;
+  const shell = document.getElementById("trend-view");
+  const available = shell ? shell.getBoundingClientRect().width - 40 : 1200;
+  trendPanelState.width = Math.max(TREND_MIN_WIDTH, Math.floor(available));
+}
+
+function getCurrentCustomRowState() {
+  return customPickState[currentType];
+}
+
+function buildTrendCustomRows(config) {
+  const rows = getCurrentCustomRowState();
+  const frontRange = getRange(config.frontMax);
+  const backRange = getRange(config.backMax);
+  const gridColumns = `72px 84px repeat(${frontRange.length}, 30px) repeat(${backRange.length}, 30px)`;
+
+  return `
+    <div class="trend-custom-rows">
+      ${rows.map((rowState, rowIndex) => {
+        const selectedCount = rowState.front.size + rowState.back.size;
+        return `
+          <div class="trend-custom-row" data-row-index="${rowIndex}" style="grid-template-columns:${gridColumns};">
+            <div class="trend-custom-label">预选${rowIndex + 1}</div>
+            <div class="trend-custom-summary">
+              <span>已选 ${selectedCount}</span>
+              <button type="button" class="trend-row-clear" data-row-clear="${rowIndex}">清空</button>
+            </div>
+            ${frontRange.map((num) => `
+              <button
+                type="button"
+                class="custom-number-cell front ${rowState.front.has(num) ? "selected" : ""}"
+                data-row-index="${rowIndex}"
+                data-zone="front"
+                data-num="${num}"
+              ><span>${num}</span></button>
+            `).join("")}
+            ${backRange.map((num) => `
+              <button
+                type="button"
+                class="custom-number-cell back ${rowState.back.has(num) ? "selected" : ""}"
+                data-row-index="${rowIndex}"
+                data-zone="back"
+                data-num="${num}"
+              ><span>${num}</span></button>
+            `).join("")}
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
 }
 
 function renderTrendChart(results) {
@@ -308,14 +392,12 @@ function renderTrendChart(results) {
     return;
   }
 
-  const visibleCount = getVisibleTrendCount();
-  const expandBtn = document.getElementById("trend-expand-btn");
-  if (expandBtn) {
-    expandBtn.textContent = visibleCount >= 30 ? "收起" : "展开更多";
-  }
+  ensureTrendPanelWidth();
+  const visibleCount = Math.min(getTrendRowsVisible(), results.length);
   const ordered = [...results].slice(0, visibleCount).reverse();
   const frontRange = getRange(config.frontMax);
   const backRange = getRange(config.backMax);
+  const panelHeight = getTrendShellHeight(visibleCount);
 
   const renderCells = (range, picked, area) => range.map((num, index) => {
     const active = picked.includes(num);
@@ -328,33 +410,48 @@ function renderTrendChart(results) {
   }).join("");
 
   container.innerHTML = `
-    <div class="trend-scroll">
-      <table class="trend-table">
-        <thead>
-          <tr>
-            <th class="issue-col" rowspan="2">期号</th>
-            <th class="date-col" rowspan="2">日期</th>
-            <th colspan="${frontRange.length}">前区号码分布（1 - ${config.frontMax}）</th>
-            <th colspan="${backRange.length}">后区号码分布（1 - ${config.backMax}）</th>
-          </tr>
-          <tr>
-            ${frontRange.map((num) => `<th>${num}</th>`).join("")}
-            ${backRange.map((num) => `<th>${num}</th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-          ${ordered.map((result) => `
-            <tr>
-              <th class="issue-col">${result.issue.slice(-5)}</th>
-              <td class="date-col">${result.drawDate.slice(5)}</td>
-              ${renderCells(frontRange, result.frontNumbers, "front")}
-              ${renderCells(backRange, result.backNumbers, "back")}
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
+    <div
+      id="trend-resize-shell"
+      class="trend-resize-shell ${trendResizeSession ? "resizing" : ""}"
+      style="width:${trendPanelState.width}px;height:${panelHeight}px;"
+    >
+      <div class="trend-track">
+        <div class="trend-scroll">
+          <table class="trend-table">
+            <thead>
+              <tr>
+                <th class="issue-col" rowspan="2">期号</th>
+                <th class="date-col" rowspan="2">日期</th>
+                <th colspan="${frontRange.length}">前区号码分布（1 - ${config.frontMax}）</th>
+                <th colspan="${backRange.length}">后区号码分布（1 - ${config.backMax}）</th>
+              </tr>
+              <tr>
+                ${frontRange.map((num) => `<th>${num}</th>`).join("")}
+                ${backRange.map((num) => `<th>${num}</th>`).join("")}
+              </tr>
+            </thead>
+            <tbody>
+              ${ordered.map((result) => `
+                <tr>
+                  <th class="issue-col">${result.issue.slice(-5)}</th>
+                  <td class="date-col">${result.drawDate.slice(5)}</td>
+                  ${renderCells(frontRange, result.frontNumbers, "front")}
+                  ${renderCells(backRange, result.backNumbers, "back")}
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="trend-custom-wrapper">
+          ${buildTrendCustomRows(config)}
+        </div>
+        <div class="trend-footnote">当前显示 ${ordered.length} 期 + 3 行自选，拖动四角可扩展到最多 30 期。</div>
+        <span class="resize-handle nw" data-resize-handle="nw"></span>
+        <span class="resize-handle ne" data-resize-handle="ne"></span>
+        <span class="resize-handle sw" data-resize-handle="sw"></span>
+        <span class="resize-handle se" data-resize-handle="se"></span>
+      </div>
     </div>
-    <div class="trend-footnote">当前显示近 ${ordered.length} 期，拖动“图表高度”可扩大到最多 30 期。</div>
   `;
 
   drawTrendLines(container);
@@ -407,6 +504,84 @@ function drawTrendLines(container) {
   appendLines(buildPoints("front"), "#ef3346");
   appendLines(buildPoints("back"), "#1f66c2");
   scroll.appendChild(svg);
+}
+
+function toggleCustomNumber(rowIndex, zone, num) {
+  const rows = getCurrentCustomRowState();
+  const row = rows[rowIndex];
+  if (!row) return;
+
+  const target = row[zone];
+  if (target.has(num)) {
+    target.delete(num);
+  } else {
+    target.add(num);
+  }
+  renderTrendChart(trendRows);
+}
+
+function clearCustomRow(rowIndex) {
+  const rows = getCurrentCustomRowState();
+  const row = rows[rowIndex];
+  if (!row) return;
+  row.front.clear();
+  row.back.clear();
+  renderTrendChart(trendRows);
+}
+
+function resizeTrendShellFromPointer(event) {
+  if (!trendResizeSession) return;
+
+  const dx = event.clientX - trendResizeSession.startX;
+  const dy = event.clientY - trendResizeSession.startY;
+  const horizontal = trendResizeSession.dirX;
+  const vertical = trendResizeSession.dirY;
+
+  if (horizontal !== 0) {
+    const nextWidth = trendResizeSession.startWidth + dx * horizontal;
+    trendPanelState.width = Math.max(TREND_MIN_WIDTH, Math.round(nextWidth));
+  }
+
+  if (vertical !== 0) {
+    const deltaRows = Math.round((dy * vertical) / TREND_ROW_HEIGHT);
+    trendPanelState.rows = Math.max(TREND_MIN_ROWS, Math.min(TREND_MAX_ROWS, trendResizeSession.startRows + deltaRows));
+  }
+
+  renderTrendChart(trendRows);
+}
+
+function stopTrendResize() {
+  document.getElementById("trend-resize-shell")?.classList.remove("resizing");
+  trendResizeSession = null;
+  window.removeEventListener("pointermove", resizeTrendShellFromPointer);
+  window.removeEventListener("pointerup", stopTrendResize);
+}
+
+function startTrendResize(handle, event) {
+  event.preventDefault();
+  const shell = document.getElementById("trend-resize-shell");
+  if (!shell) return;
+
+  const rect = shell.getBoundingClientRect();
+  const dirs = {
+    nw: { dirX: -1, dirY: -1 },
+    ne: { dirX: 1, dirY: -1 },
+    sw: { dirX: -1, dirY: 1 },
+    se: { dirX: 1, dirY: 1 }
+  };
+
+  trendResizeSession = {
+    startX: event.clientX,
+    startY: event.clientY,
+    startWidth: rect.width,
+    startRows: getTrendRowsVisible(),
+    ...dirs[handle]
+  };
+
+  shell.classList.add("resizing");
+
+  window.addEventListener("pointermove", resizeTrendShellFromPointer);
+  window.addEventListener("pointerup", stopTrendResize);
 }
 
 function calculateStats(results) {
@@ -766,11 +941,26 @@ function initEventListeners() {
   });
 
   document.getElementById("trend-limit").addEventListener("change", loadTrend);
-  document.getElementById("trend-height").addEventListener("input", () => renderTrendChart(trendRows));
-  document.getElementById("trend-expand-btn").addEventListener("click", () => {
-    const slider = document.getElementById("trend-height");
-    slider.value = Number(slider.value) >= 30 ? 8 : 30;
-    renderTrendChart(trendRows);
+
+  document.getElementById("trend-result").addEventListener("pointerdown", (event) => {
+    if (currentAnalysis !== "trend") return;
+    const handle = event.target.closest("[data-resize-handle]");
+    if (!handle) return;
+    startTrendResize(handle.dataset.resizeHandle, event);
+  });
+
+  document.getElementById("trend-result").addEventListener("click", (event) => {
+    if (currentAnalysis !== "trend") return;
+    const pick = event.target.closest("[data-row-index][data-zone][data-num]");
+    if (pick) {
+      toggleCustomNumber(Number(pick.dataset.rowIndex), pick.dataset.zone, pick.dataset.num);
+      return;
+    }
+
+    const clear = event.target.closest("[data-row-clear]");
+    if (clear) {
+      clearCustomRow(Number(clear.dataset.rowClear));
+    }
   });
 
   document.querySelectorAll("[data-analysis]").forEach((button) => {
@@ -879,6 +1069,7 @@ async function init() {
   document.getElementById("history-date").value = today;
   document.getElementById("base-date").value = today;
 
+  ensureTrendPanelWidth();
   initEventListeners();
   syncTypeButtons();
   await Promise.all([loadLatestComparison(), loadTrend()]);
