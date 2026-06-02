@@ -36,17 +36,109 @@ let currentAnalysis = "trend";
 let statsPeriod = 10;
 let trendPanelState = {
   width: 0,
-  rows: 12
+  rows: 26
 };
 let trendResizeSession = null;
-const TREND_MIN_ROWS = 12;
-const TREND_MAX_ROWS = 30;
-const TREND_ROW_HEIGHT = 30;
-const TREND_HEADER_HEIGHT = 60;
+const TREND_MIN_ROWS = 14;
+const TREND_MAX_ROWS = 50;
+const TREND_ROW_HEIGHT = 22;
+const TREND_HEADER_HEIGHT = 48;
 const TREND_CUSTOM_ROWS = 3;
-const TREND_CUSTOM_ROW_HEIGHT = 28;
+const TREND_CUSTOM_ROW_HEIGHT = 24;
 const TREND_FOOTER_HEIGHT = 24;
-const TREND_MIN_WIDTH = 980;
+const TREND_STATS_ROW_HEIGHT = 22;
+const TREND_STATS_ROWS = 3;
+const TREND_MIN_WIDTH = 1180;
+
+const SEGMENT_MAP = {
+  dlt: {
+    front: [[1, 9], [10, 19], [20, 29], [30, 35]],
+    back: [[1, 6], [7, 12]]
+  },
+  ssq: {
+    front: [[1, 11], [12, 22], [23, 33]],
+    back: [[1, 8], [9, 16]]
+  }
+};
+
+function getSegments(type, area) {
+  return SEGMENT_MAP[type]?.[area] || [];
+}
+
+function getSegmentIndex(type, area, num) {
+  const value = Number(num);
+  const segments = getSegments(type, area);
+  for (let i = 0; i < segments.length; i++) {
+    if (value >= segments[i][0] && value <= segments[i][1]) return i;
+  }
+  return 0;
+}
+
+function computeColumnStats(allResults, range, field) {
+  const counts = Object.fromEntries(range.map((num) => [num, 0]));
+  const currentMiss = Object.fromEntries(range.map((num) => [num, allResults.length]));
+  const maxMiss = Object.fromEntries(range.map((num) => [num, 0]));
+  const lastHitRow = Object.fromEntries(range.map((num) => [num, -1]));
+
+  const chronological = [...allResults].reverse();
+  chronological.forEach((row, rowIndex) => {
+    const picked = new Set(row[field]);
+    range.forEach((num) => {
+      if (picked.has(num)) {
+        counts[num] += 1;
+        if (lastHitRow[num] >= 0) {
+          const gap = rowIndex - lastHitRow[num] - 1;
+          if (gap > maxMiss[num]) maxMiss[num] = gap;
+        }
+        lastHitRow[num] = rowIndex;
+      }
+    });
+  });
+
+  range.forEach((num) => {
+    if (lastHitRow[num] === -1) {
+      currentMiss[num] = chronological.length;
+      maxMiss[num] = chronological.length;
+    } else {
+      currentMiss[num] = chronological.length - 1 - lastHitRow[num];
+      const tailGap = chronological.length - 1 - lastHitRow[num];
+      if (tailGap > maxMiss[num]) maxMiss[num] = tailGap;
+    }
+  });
+
+  return { counts, currentMiss, maxMiss };
+}
+
+function computeRowMetrics(row, type) {
+  const cfg = LOTTERY_CONFIG[type];
+  const front = row.frontNumbers.map(Number);
+  const back = row.backNumbers.map(Number);
+  const sum = (arr) => arr.reduce((a, b) => a + b, 0);
+  const oddCount = (arr) => arr.filter((n) => n % 2 === 1).length;
+  const frontMid = Math.ceil(cfg.frontMax / 2);
+  const small = front.filter((n) => n <= frontMid).length;
+  const big = front.length - small;
+  const fo = oddCount(front);
+  const bo = oddCount(back);
+  return {
+    frontSum: sum(front),
+    frontOddEven: `${fo}:${front.length - fo}`,
+    frontBigSmall: `${big}:${small}`,
+    backSum: sum(back),
+    backOddEven: `${bo}:${back.length - bo}`
+  };
+}
+
+function getHeatLevel(count, maxCount) {
+  if (!count) return 0;
+  if (maxCount <= 1) return 3;
+  const ratio = count / maxCount;
+  if (ratio >= 0.85) return 5;
+  if (ratio >= 0.65) return 4;
+  if (ratio >= 0.45) return 3;
+  if (ratio >= 0.25) return 2;
+  return 1;
+}
 
 function createCustomRowState() {
   return {
@@ -324,6 +416,7 @@ function getTrendRowsVisible() {
 function getTrendShellHeight(rowsVisible) {
   return TREND_HEADER_HEIGHT
     + rowsVisible * TREND_ROW_HEIGHT
+    + TREND_STATS_ROWS * TREND_STATS_ROW_HEIGHT
     + TREND_CUSTOM_ROWS * TREND_CUSTOM_ROW_HEIGHT
     + TREND_FOOTER_HEIGHT
     + 4;
@@ -399,15 +492,70 @@ function renderTrendChart(results) {
   const backRange = getRange(config.backMax);
   const panelHeight = getTrendShellHeight(visibleCount);
 
-  const renderCells = (range, picked, area) => range.map((num, index) => {
-    const active = picked.includes(num);
-    const zone = !active && index % 5 === 0 ? " miss-zone" : "";
-    return `
-      <td class="trend-cell${zone}" data-area="${area}" data-num="${num}">
-        ${active ? `<span class="trend-hit ${area === "front" ? "red" : "blue"}">${num}</span>` : index % 2 ? "" : "·"}
-      </td>
-    `;
+  const frontStats = computeColumnStats(ordered.slice().reverse(), frontRange, "frontNumbers");
+  const backStats = computeColumnStats(ordered.slice().reverse(), backRange, "backNumbers");
+
+  const renderCells = (range, picked, area) => {
+    return range.map((num) => {
+      const active = picked.includes(num);
+      const segIdx = getSegmentIndex(currentType, area, num);
+      const cls = `trend-cell area-${area} seg-${segIdx}${active ? " active" : ""}`;
+      return `
+        <td class="${cls}" data-area="${area}" data-num="${num}">
+          ${active ? `<span class="trend-hit ${area === "front" ? "red" : "blue"}">${num}</span>` : ""}
+        </td>
+      `;
+    }).join("");
+  };
+
+  const renderNumberHeader = (range, area) => range.map((num) => {
+    const segIdx = getSegmentIndex(currentType, area, num);
+    return `<th class="num-th area-${area} seg-${segIdx}">${num}</th>`;
   }).join("");
+
+  const renderGroupHeader = (area) => {
+    const segs = getSegments(currentType, area);
+    return segs.map((seg, idx) => {
+      const span = seg[1] - seg[0] + 1;
+      return `<th class="seg-group area-${area} seg-${idx}" colspan="${span}">${seg[0]}-${seg[1]}</th>`;
+    }).join("");
+  };
+
+  const METRIC_DEFS = [
+    { key: "frontSum", label: "前和", cls: "metric-front-sum" },
+    { key: "frontOddEven", label: "前奇偶", cls: "metric-odd" },
+    { key: "frontBigSmall", label: "前大小", cls: "metric-bs" },
+    { key: "backSum", label: "后和", cls: "metric-back-sum" },
+    { key: "backOddEven", label: "后奇偶", cls: "metric-odd" }
+  ];
+
+  const renderMetricCells = (result) => {
+    const m = computeRowMetrics(result, currentType);
+    return METRIC_DEFS.map((def) => `<td class="metric-cell ${def.cls}">${m[def.key]}</td>`).join("");
+  };
+
+  const occurrenceCell = (stats, num) => {
+    const c = stats.counts[num];
+    return { text: c || "", cls: c ? "occ" : "muted" };
+  };
+  const maxMissCell = (stats, num) => {
+    const v = stats.maxMiss[num];
+    return { text: v || "", cls: v ? "max-miss" : "muted" };
+  };
+  const currentMissCell = (stats, num) => {
+    const v = stats.currentMiss[num];
+    let cls = "cur-miss";
+    if (v >= 10) cls += " warn-hot";
+    else if (v === 0) cls += " warn-fresh";
+    return { text: v === 0 ? "0" : v, cls };
+  };
+
+  const renderStatRow = (getter, range, area) => range.map((num) => {
+    const v = getter(area === "front" ? frontStats : backStats, num);
+    return `<td class="stat-cell ${v.cls || ""}">${v.text}</td>`;
+  }).join("");
+
+  const blankMetrics = `<td class="metric-cell" colspan="${METRIC_DEFS.length}"></td>`;
 
   container.innerHTML = `
     <div
@@ -422,12 +570,15 @@ function renderTrendChart(results) {
               <tr>
                 <th class="issue-col" rowspan="2">期号</th>
                 <th class="date-col" rowspan="2">日期</th>
-                <th colspan="${frontRange.length}">前区号码分布（1 - ${config.frontMax}）</th>
-                <th colspan="${backRange.length}">后区号码分布（1 - ${config.backMax}）</th>
+                ${renderGroupHeader("front")}
+                ${renderGroupHeader("back")}
+                <th class="metric-group" colspan="3">前区统计</th>
+                <th class="metric-group" colspan="2">后区统计</th>
               </tr>
               <tr>
-                ${frontRange.map((num) => `<th>${num}</th>`).join("")}
-                ${backRange.map((num) => `<th>${num}</th>`).join("")}
+                ${renderNumberHeader(frontRange, "front")}
+                ${renderNumberHeader(backRange, "back")}
+                ${METRIC_DEFS.map((d) => `<th class="metric-th ${d.cls}">${d.label}</th>`).join("")}
               </tr>
             </thead>
             <tbody>
@@ -437,15 +588,39 @@ function renderTrendChart(results) {
                   <td class="date-col">${result.drawDate.slice(5)}</td>
                   ${renderCells(frontRange, result.frontNumbers, "front")}
                   ${renderCells(backRange, result.backNumbers, "back")}
+                  ${renderMetricCells(result)}
                 </tr>
               `).join("")}
             </tbody>
+            <tfoot>
+              <tr class="stat-row stat-occ">
+                <th class="issue-col stat-label">出现</th>
+                <td class="date-col stat-label">次数</td>
+                ${renderStatRow(occurrenceCell, frontRange, "front")}
+                ${renderStatRow(occurrenceCell, backRange, "back")}
+                ${blankMetrics}
+              </tr>
+              <tr class="stat-row stat-max">
+                <th class="issue-col stat-label">最大</th>
+                <td class="date-col stat-label">遗漏</td>
+                ${renderStatRow(maxMissCell, frontRange, "front")}
+                ${renderStatRow(maxMissCell, backRange, "back")}
+                ${blankMetrics}
+              </tr>
+              <tr class="stat-row stat-cur">
+                <th class="issue-col stat-label">当前</th>
+                <td class="date-col stat-label">遗漏</td>
+                ${renderStatRow(currentMissCell, frontRange, "front")}
+                ${renderStatRow(currentMissCell, backRange, "back")}
+                ${blankMetrics}
+              </tr>
+            </tfoot>
           </table>
         </div>
         <div class="trend-custom-wrapper">
           ${buildTrendCustomRows(config)}
         </div>
-        <div class="trend-footnote">当前显示 ${ordered.length} 期 + 3 行自选，拖动四角可扩展到最多 30 期。</div>
+        <div class="trend-footnote">显示 ${ordered.length} 期 · 拖四角缩放（${TREND_MIN_ROWS}-${TREND_MAX_ROWS} 期）· 表尾统计基于当前窗口</div>
         <span class="resize-handle nw" data-resize-handle="nw"></span>
         <span class="resize-handle ne" data-resize-handle="ne"></span>
         <span class="resize-handle sw" data-resize-handle="sw"></span>
@@ -460,8 +635,9 @@ function renderTrendChart(results) {
 function drawTrendLines(container) {
   const scroll = container.querySelector(".trend-scroll");
   const table = container.querySelector(".trend-table");
-  const rows = [...table.querySelectorAll("tbody tr")];
-  if (!scroll || !table || rows.length < 2) return;
+  if (!scroll || !table) return;
+  const bodyRows = [...table.querySelectorAll("tbody tr")];
+  if (bodyRows.length < 2) return;
 
   const tableRect = table.getBoundingClientRect();
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -470,39 +646,42 @@ function drawTrendLines(container) {
   svg.setAttribute("height", table.offsetHeight);
   svg.setAttribute("viewBox", `0 0 ${table.offsetWidth} ${table.offsetHeight}`);
 
-  const buildPoints = (area) => rows.map((row) => {
-    const hits = [...row.querySelectorAll(`td[data-area="${area}"] .trend-hit`)];
-    return hits.map((hit) => {
-      const rect = hit.getBoundingClientRect();
-      return {
-        x: rect.left - tableRect.left + rect.width / 2,
-        y: rect.top - tableRect.top + rect.height / 2
-      };
-    });
-  });
+  const config = LOTTERY_CONFIG[currentType];
+  const drawArea = (area, color) => {
+    const range = getRange(area === "front" ? config.frontMax : config.backMax);
+    range.forEach((num) => {
+      const points = [];
+      bodyRows.forEach((row, rowIdx) => {
+        const cell = row.querySelector(`td[data-area="${area}"][data-num="${num}"] .trend-hit`);
+        if (!cell) return;
+        const rect = cell.getBoundingClientRect();
+        points.push({
+          x: rect.left - tableRect.left + rect.width / 2,
+          y: rect.top - tableRect.top + rect.height / 2,
+          rowIdx
+        });
+      });
 
-  const appendLines = (pointsByRow, color) => {
-    for (let index = 1; index < pointsByRow.length; index++) {
-      const prev = pointsByRow[index - 1];
-      const current = pointsByRow[index];
-      current.forEach((point, pointIndex) => {
-        const from = prev[Math.min(pointIndex, prev.length - 1)];
-        if (!from) return;
+      for (let i = 1; i < points.length; i++) {
+        const from = points[i - 1];
+        const to = points[i];
+        const gap = to.rowIdx - from.rowIdx;
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", from.x);
         line.setAttribute("y1", from.y);
-        line.setAttribute("x2", point.x);
-        line.setAttribute("y2", point.y);
+        line.setAttribute("x2", to.x);
+        line.setAttribute("y2", to.y);
         line.setAttribute("stroke", color);
-        line.setAttribute("stroke-width", "1.5");
-        line.setAttribute("opacity", "0.42");
+        line.setAttribute("stroke-width", gap > 1 ? "1" : "1.4");
+        line.setAttribute("opacity", gap > 1 ? "0.22" : "0.42");
+        if (gap > 1) line.setAttribute("stroke-dasharray", "3 3");
         svg.appendChild(line);
-      });
-    }
+      }
+    });
   };
 
-  appendLines(buildPoints("front"), "#ef3346");
-  appendLines(buildPoints("back"), "#1f66c2");
+  drawArea("front", "#ef3346");
+  drawArea("back", "#1f66c2");
   scroll.appendChild(svg);
 }
 
