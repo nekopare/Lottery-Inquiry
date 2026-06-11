@@ -34,6 +34,40 @@ let statArea = "front";
 let missArea = "front";
 let currentAnalysis = "trend";
 let statsPeriod = 10;
+let aiMessages = [];
+let aiThinking = false;
+let aiSelectedHistory = 0;
+const AI_MODEL_OPTIONS = {
+  "deepseek-chat": { provider: "deepseek", model: "deepseek-chat", label: "DeepSeek" },
+  "claude-sonnet": { provider: "anthropic", model: "claude-sonnet-4-5-20250929", label: "Claude" },
+  "gemini-flash": { provider: "gemini", model: "gemini-2.5-flash", label: "Gemini" },
+  "gpt-4o": { provider: "openai", model: "gpt-4o", label: "ChatGPT" }
+};
+const AI_PROVIDER_DEFAULTS = {
+  deepseek: {
+    apiUrl: "https://api.deepseek.com/chat/completions",
+    model: "deepseek-chat"
+  },
+  openai: {
+    apiUrl: "https://api.openai.com/v1/chat/completions",
+    model: "gpt-4o"
+  },
+  anthropic: {
+    apiUrl: "https://api.anthropic.com/v1/messages",
+    model: "claude-sonnet-4-5-20250929"
+  },
+  gemini: {
+    apiUrl: "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    model: "gemini-2.5-flash"
+  },
+  custom: {
+    apiUrl: "",
+    model: ""
+  }
+};
+let aiSelectedModel = localStorage.getItem("lottery-ai-model") || "deepseek-chat";
+if (!AI_MODEL_OPTIONS[aiSelectedModel]) aiSelectedModel = "deepseek-chat";
+let aiUserConfig = loadAIUserConfig();
 let trendPanelState = {
   width: 0,
   rows: 26
@@ -1083,25 +1117,380 @@ async function showDetail(issue) {
   `;
 }
 
-function syncTypeButtons() {
-  document.querySelectorAll("[data-type]").forEach((button) => {
-    button.classList.toggle("active", button.dataset.type === currentType);
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function getMessageTime() {
+  const now = new Date();
+  return `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+}
+
+function getMockPredictionIssue() {
+  const latest = trendRows[0]?.issue || (currentType === "dlt" ? "26063" : "2026063");
+  const next = Number(latest) + 1;
+  return Number.isFinite(next) ? String(next).padStart(latest.length, "0") : latest;
+}
+
+function renderAIPredictionCard(prediction = null) {
+  const front = prediction?.front || (currentType === "dlt" ? ["03", "15", "21", "29", "33"] : ["03", "08", "15", "21", "26", "31"]);
+  const back = prediction?.back || (currentType === "dlt" ? ["06", "11"] : ["10"]);
+  return `
+    <div class="ai-prediction-card">
+      <div class="ai-card-title">预测号码</div>
+      <p class="ai-issue">🎯 预测期号：第 ${getMockPredictionIssue()} 期</p>
+      <div class="ai-ball-row">
+        <span class="ai-ball-label">前区（${front.length}个号）</span>
+        <div class="ai-balls">${front.map((num) => `<span class="ai-ball red">${num}</span>`).join("")}</div>
+      </div>
+      <div class="ai-card-divider"></div>
+      <div class="ai-ball-row">
+        <span class="ai-ball-label">后区（${back.length}个号）</span>
+        <div class="ai-balls">${back.map((num) => `<span class="ai-ball blue">${num}</span>`).join("")}</div>
+      </div>
+      <p class="ai-disclaimer">⚠️ 以上预测结果仅供参考，购彩有风险，投注需谨慎！</p>
+    </div>
+  `;
+}
+
+function createMockAIReply(text) {
+  const cleanText = text.trim();
+  if (cleanText.includes("预测")) {
+    return {
+      role: "ai",
+      time: getMessageTime(),
+      text: `好的！我将基于最近的开奖数据和算法模型，为您预测下一期${LOTTERY_CONFIG[currentType].name}号码。`,
+      card: renderAIPredictionCard()
+    };
+  }
+
+  if (cleanText.includes("冷热")) {
+    return {
+      role: "ai",
+      time: getMessageTime(),
+      text: `从近50期走势看，前区热号集中在 03、15、21、29 一带，冷号可重点观察 07、18、32。后区近期 06、11 活跃度较高，建议采用热号稳胆加冷号补位的组合思路。`
+    };
+  }
+
+  return {
+    role: "ai",
+    time: getMessageTime(),
+    text: `我已收到你的问题。当前可以围绕历史开奖规律、号码分布、冷热号、奇偶比、大小比和值区间做模拟分析，并生成多组参考方案。`
+  };
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function loadAIUserConfig() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("lottery-ai-user-config") || "{}");
+    return {
+      mode: saved.mode === "byok" ? "byok" : "mock",
+      provider: AI_PROVIDER_DEFAULTS[saved.provider] ? saved.provider : "deepseek",
+      apiUrl: typeof saved.apiUrl === "string" ? saved.apiUrl : AI_PROVIDER_DEFAULTS.deepseek.apiUrl,
+      apiKey: typeof saved.apiKey === "string" ? saved.apiKey : "",
+      model: typeof saved.model === "string" ? saved.model : AI_PROVIDER_DEFAULTS.deepseek.model
+    };
+  } catch {
+    return {
+      mode: "mock",
+      provider: "deepseek",
+      apiUrl: AI_PROVIDER_DEFAULTS.deepseek.apiUrl,
+      apiKey: "",
+      model: AI_PROVIDER_DEFAULTS.deepseek.model
+    };
+  }
+}
+
+function saveAIUserConfig(config) {
+  aiUserConfig = config;
+  localStorage.setItem("lottery-ai-user-config", JSON.stringify(config));
+}
+
+function getAIRequestConfig() {
+  const modelConfig = getSelectedAIModelConfig();
+  if (aiUserConfig.mode !== "byok") {
+    return {
+      mode: "server",
+      provider: modelConfig.provider,
+      model: modelConfig.model
+    };
+  }
+
+  return {
+    mode: "byok",
+    provider: aiUserConfig.provider,
+    model: aiUserConfig.model || modelConfig.model,
+    apiUrl: aiUserConfig.apiUrl,
+    apiKey: aiUserConfig.apiKey
+  };
+}
+
+function getSelectedAIModelConfig() {
+  return AI_MODEL_OPTIONS[aiSelectedModel] || AI_MODEL_OPTIONS["deepseek-chat"];
+}
+
+function normalizeAIReply(data, fallbackText) {
+  if (!data || typeof data.reply !== "string") return createMockAIReply(fallbackText);
+  return {
+    role: "ai",
+    time: getMessageTime(),
+    text: data.reply,
+    card: data.prediction ? renderAIPredictionCard(data.prediction) : ""
+  };
+}
+
+async function requestAIReply(text) {
+  if (aiUserConfig.mode !== "byok") {
+    throw new Error("未启用自带 API Key，使用本地模拟回复");
+  }
+
+  const aiRequestConfig = getAIRequestConfig();
+  const response = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: text,
+      lotteryType: currentType,
+      lotteryName: LOTTERY_CONFIG[currentType].name,
+      ...aiRequestConfig,
+      recentResults: trendRows.slice(0, 50)
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    throw new Error(errorText || `AI 接口请求失败：${response.status}`);
+  }
+
+  return response.json();
+}
+
+function renderAIWelcome() {
+  return `
+    <div class="ai-welcome">
+      <div class="ai-hero-row">
+        <div class="ai-avatar large">🤖</div>
+        <div>
+          <h2>你好，我是大乐透预测助手</h2>
+          <p>基于历史开奖数据和智能算法，为您提供专业的大乐透预测分析服务</p>
+        </div>
+      </div>
+      <div class="ai-feature-card">
+        <div>✓ 分析近100期开奖规律</div>
+        <div>✓ 预测下期可能出现的号码</div>
+        <div>✓ 生成多组投注方案</div>
+        <div>✓ 分析冷热号趋势</div>
+        <div>✓ 分析奇偶比和大小比</div>
+      </div>
+      <div class="ai-quick-title">你可以尝试问我：</div>
+      <div class="ai-quick-actions">
+        <button type="button" data-ai-prompt="预测下期号码">🎯 预测下期号码</button>
+        <button type="button" data-ai-prompt="分析最近50期">⏱ 分析最近50期</button>
+        <button type="button" data-ai-prompt="生成5组方案">📋 生成5组方案</button>
+        <button type="button" data-ai-prompt="冷热号分析">🔥 冷热号分析</button>
+        <button type="button" data-ai-prompt="和值分析">✦ 和值分析</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAIMessage(message) {
+  if (message.role === "user") {
+    return `
+      <div class="ai-message-row user">
+        <div class="ai-message-stack">
+          <time>${message.time}</time>
+          <div class="ai-bubble user">${escapeHtml(message.text)}</div>
+        </div>
+        <div class="ai-user-avatar">♡</div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="ai-message-row ai">
+      <div class="ai-avatar small">🤖</div>
+      <div class="ai-message-stack">
+        <div class="ai-bubble ai">
+          <p>${escapeHtml(message.text)}</p>
+          ${message.card || ""}
+        </div>
+        <time>${message.time}</time>
+      </div>
+    </div>
+  `;
+}
+
+function renderAIThinking() {
+  return `
+    <div class="ai-message-row ai">
+      <div class="ai-avatar small">🤖</div>
+      <div class="ai-bubble ai thinking" aria-label="AI 思考中">
+        <span></span><span></span><span></span>
+      </div>
+    </div>
+  `;
+}
+
+function renderAIChat() {
+  const container = document.getElementById("ai-chat-content");
+  if (!container) return;
+  const messages = aiMessages.map(renderAIMessage).join("");
+  container.innerHTML = aiMessages.length || aiThinking
+    ? `${messages}${aiThinking ? renderAIThinking() : ""}`
+    : renderAIWelcome();
+
+  const scroll = document.getElementById("ai-chat-scroll");
+  if (scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function setAISendState() {
+  const input = document.getElementById("ai-message-input");
+  const send = document.getElementById("ai-send-btn");
+  if (!input || !send) return;
+  send.classList.toggle("ready", input.value.trim().length > 0);
+}
+
+async function sendAIMessage(text) {
+  const content = text.trim();
+  if (!content || aiThinking) return;
+  const input = document.getElementById("ai-message-input");
+  if (input) input.value = "";
+  setAISendState();
+
+  aiMessages.push({ role: "user", time: getMessageTime(), text: content });
+  renderAIChat();
+
+  await delay(1200);
+  aiThinking = true;
+  renderAIChat();
+
+  try {
+    const data = await requestAIReply(content);
+    await delay(800);
+    aiMessages.push(normalizeAIReply(data, content));
+  } catch (error) {
+    console.warn("AI 接口不可用，使用本地模拟回复:", error);
+    await delay(800);
+    aiMessages.push(createMockAIReply(content));
+  } finally {
+    aiThinking = false;
+    renderAIChat();
+  }
+}
+
+function selectAIHistory(button) {
+  aiSelectedHistory = Number(button.dataset.historyIndex || 0);
+  document.querySelectorAll(".ai-history-item").forEach((item) => {
+    item.classList.toggle("active", Number(item.dataset.historyIndex || 0) === aiSelectedHistory);
   });
 }
 
+function initAIModelSelect() {
+  const select = document.getElementById("ai-model-select");
+  if (!select) return;
+  select.value = aiSelectedModel;
+  select.addEventListener("change", () => {
+    aiSelectedModel = AI_MODEL_OPTIONS[select.value] ? select.value : "deepseek-chat";
+    localStorage.setItem("lottery-ai-model", aiSelectedModel);
+  });
+}
+
+function fillAISettingsForm() {
+  const mode = document.getElementById("ai-api-mode");
+  const provider = document.getElementById("ai-provider");
+  const apiUrl = document.getElementById("ai-api-url");
+  const model = document.getElementById("ai-api-model");
+  const apiKey = document.getElementById("ai-api-key");
+  if (!mode || !provider || !apiUrl || !model || !apiKey) return;
+
+  mode.value = aiUserConfig.mode;
+  provider.value = aiUserConfig.provider;
+  apiUrl.value = aiUserConfig.apiUrl;
+  model.value = aiUserConfig.model;
+  apiKey.value = aiUserConfig.apiKey;
+}
+
+function openAISettings() {
+  fillAISettingsForm();
+  document.getElementById("ai-settings-modal").classList.add("active");
+}
+
+function closeAISettings() {
+  document.getElementById("ai-settings-modal").classList.remove("active");
+}
+
+function applyProviderDefaults(providerValue) {
+  const defaults = AI_PROVIDER_DEFAULTS[providerValue] || AI_PROVIDER_DEFAULTS.deepseek;
+  document.getElementById("ai-api-url").value = defaults.apiUrl;
+  document.getElementById("ai-api-model").value = defaults.model;
+}
+
+function initAISettings() {
+  document.getElementById("ai-settings-btn").addEventListener("click", openAISettings);
+  document.querySelector(".ai-settings-close").addEventListener("click", closeAISettings);
+
+  document.getElementById("ai-settings-modal").addEventListener("click", (event) => {
+    if (event.target.id === "ai-settings-modal") closeAISettings();
+  });
+
+  document.getElementById("ai-provider").addEventListener("change", (event) => {
+    applyProviderDefaults(event.target.value);
+  });
+
+  document.getElementById("ai-clear-settings").addEventListener("click", () => {
+    localStorage.removeItem("lottery-ai-user-config");
+    aiUserConfig = loadAIUserConfig();
+    fillAISettingsForm();
+  });
+
+  document.getElementById("ai-settings-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    const provider = document.getElementById("ai-provider").value;
+    const defaults = AI_PROVIDER_DEFAULTS[provider] || AI_PROVIDER_DEFAULTS.deepseek;
+    saveAIUserConfig({
+      mode: document.getElementById("ai-api-mode").value === "byok" ? "byok" : "mock",
+      provider,
+      apiUrl: document.getElementById("ai-api-url").value.trim() || defaults.apiUrl,
+      apiKey: document.getElementById("ai-api-key").value.trim(),
+      model: document.getElementById("ai-api-model").value.trim() || defaults.model
+    });
+    closeAISettings();
+  });
+}
+
+function syncTypeButtons() {
+  document.querySelectorAll(".seg-btn, .nav-tab.lottery-switch").forEach((button) => {
+    button.classList.toggle("active", button.dataset.type === currentType);
+  });
+  if (currentAnalysis === "ai") {
+    document.querySelectorAll(".nav-tab.lottery-switch").forEach((button) => button.classList.remove("active"));
+  }
+}
+
 function switchType(type) {
-  if (!LOTTERY_CONFIG[type] || type === currentType) return;
+  if (!LOTTERY_CONFIG[type]) return;
+  const shouldLeaveAI = currentAnalysis === "ai";
+  if (type === currentType) {
+    if (shouldLeaveAI) switchAnalysis("trend");
+    return;
+  }
   currentType = type;
   syncTypeButtons();
   loadTrend();
+  if (shouldLeaveAI) switchAnalysis("trend");
 }
 
 function switchAnalysis(view) {
-  if (view === "distribution") {
-    currentAnalysis = view;
-  } else {
-    currentAnalysis = view || "trend";
-  }
+  currentAnalysis = view || "trend";
 
   document.querySelectorAll("[data-analysis]").forEach((button) => {
     button.classList.toggle("active", button.dataset.analysis === currentAnalysis);
@@ -1111,7 +1500,11 @@ function switchAnalysis(view) {
     panel.classList.toggle("active", panel.id === `${currentAnalysis}-view`);
   });
 
-  document.querySelector(".trend-controls").classList.toggle("stats-mode", currentAnalysis !== "trend");
+  const controls = document.querySelector(".trend-controls");
+  controls.classList.toggle("stats-mode", currentAnalysis !== "trend");
+  controls.classList.toggle("ai-hidden", currentAnalysis === "ai");
+  syncTypeButtons();
+  if (currentAnalysis === "ai") renderAIChat();
 }
 
 function initEventListeners() {
@@ -1143,7 +1536,38 @@ function initEventListeners() {
   });
 
   document.querySelectorAll("[data-analysis]").forEach((button) => {
-    button.addEventListener("click", () => switchAnalysis(button.dataset.analysis));
+    button.addEventListener("click", () => {
+      switchAnalysis(button.dataset.analysis);
+      if (button.classList.contains("ai-nav-tab")) {
+        document.getElementById("analytics-section").scrollIntoView({ behavior: "smooth" });
+      }
+    });
+  });
+
+  document.querySelectorAll("[data-history-index]").forEach((button) => {
+    button.addEventListener("click", () => selectAIHistory(button));
+  });
+
+  initAIModelSelect();
+  initAISettings();
+
+  document.getElementById("ai-clear-history").addEventListener("click", () => {
+    aiMessages = [];
+    aiThinking = false;
+    renderAIChat();
+  });
+
+  document.getElementById("ai-input-form").addEventListener("submit", (event) => {
+    event.preventDefault();
+    sendAIMessage(document.getElementById("ai-message-input").value);
+  });
+
+  document.getElementById("ai-message-input").addEventListener("input", setAISendState);
+
+  document.getElementById("ai-chat-content").addEventListener("click", (event) => {
+    const button = event.target.closest("[data-ai-prompt]");
+    if (!button) return;
+    sendAIMessage(button.dataset.aiPrompt);
   });
 
   document.getElementById("top-stats-link").addEventListener("click", (event) => {

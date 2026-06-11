@@ -17,6 +17,7 @@
         <button class="nav-tab" data-nav="home">首页</button>
         <button class="nav-tab lottery-switch active" data-type="dlt">大乐透</button>
         <button class="nav-tab lottery-switch" data-type="ssq">双色球</button>
+        <button class="nav-tab ai-nav-tab" data-analysis="ai">大模型预测</button>
       </nav>
       <div class="top-actions">
         <a href="#analytics-section" id="top-stats-link">数据统计</a>
@@ -52,7 +53,7 @@
             <button class="analysis-tab active" data-analysis="trend">走势分析</button>
             <button class="analysis-tab" data-analysis="numbers">号码统计</button>
             <button class="analysis-tab" data-analysis="distribution">分布分析</button>
-            <button class="analysis-tab badge">即将上线</button>
+            <button class="analysis-tab" data-analysis="ai">大模型预测</button>
           </div>
           <div class="trend-controls">
             <select id="trend-limit" aria-label="走势图期数">
@@ -124,6 +125,86 @@
             <div id="distribution-result" class="distribution-result">
               <div class="loading">分布数据加载中...</div>
             </div>
+          </div>
+        </div>
+
+        <div id="ai-view" class="analysis-view">
+          <div class="ai-workbench">
+            <aside class="ai-sidebar" aria-label="历史预测记录">
+              <div class="ai-sidebar-head">
+                <h3><span class="ai-clock">◷</span>历史预测记录</h3>
+                <button id="ai-clear-history" type="button">🗑️ 清空</button>
+              </div>
+              <div class="ai-sidebar-section">
+                <div class="ai-section-label today">今日预测</div>
+                <button class="ai-history-item active" type="button" data-history-index="0">
+                  <span>
+                    <strong>20260609</strong>
+                    <em>16:20</em>
+                    <small>预测下期大乐透号码走势...</small>
+                  </span>
+                  <i>›</i>
+                </button>
+                <button class="ai-history-item" type="button" data-history-index="1">
+                  <span>
+                    <strong>20260608</strong>
+                    <em>15:42</em>
+                    <small>帮我分析最近50期的冷号...</small>
+                  </span>
+                  <i>›</i>
+                </button>
+                <button class="ai-history-item" type="button" data-history-index="2">
+                  <span>
+                    <strong>20260607</strong>
+                    <em>14:15</em>
+                    <small>生成5组大乐透投注方案...</small>
+                  </span>
+                  <i>›</i>
+                </button>
+              </div>
+              <div class="ai-sidebar-section saved">
+                <div class="ai-section-label favorite">⭐ 收藏方案</div>
+                <button class="ai-favorite-item" type="button">
+                  <span>稳健型方案</span><strong>5组</strong><i>›</i>
+                </button>
+                <button class="ai-favorite-item" type="button">
+                  <span>激进型方案</span><strong>8组</strong><i>›</i>
+                </button>
+                <button class="ai-favorite-item" type="button">
+                  <span>冷热号方案</span><strong>3组</strong><i>›</i>
+                </button>
+                <button class="ai-favorite-item" type="button">
+                  <span>奇偶比方案</span><strong>4组</strong><i>›</i>
+                </button>
+                <button class="ai-favorite-item" type="button">
+                  <span>大小比方案</span><strong>4组</strong><i>›</i>
+                </button>
+              </div>
+            </aside>
+
+            <section class="ai-main" aria-label="大模型预测工作台">
+              <div id="ai-chat-scroll" class="ai-chat-scroll">
+                <div id="ai-chat-content" class="ai-chat-content"></div>
+              </div>
+              <form id="ai-input-form" class="ai-input-bar">
+                <div class="ai-input-shell">
+                  <input id="ai-message-input" type="text" placeholder="输入你的问题..." autocomplete="off">
+                  <div class="ai-input-tools left">
+                    <button type="button" aria-label="附件">📎</button>
+                    <button id="ai-settings-btn" type="button" aria-label="设置">⚙️</button>
+                  </div>
+                  <div class="ai-input-tools right">
+                    <select id="ai-model-select" class="ai-model-select" aria-label="选择对话模型">
+                      <option value="deepseek-chat">DeepSeek</option>
+                      <option value="claude-sonnet">Claude</option>
+                      <option value="gemini-flash">Gemini</option>
+                      <option value="gpt-4o">ChatGPT</option>
+                    </select>
+                    <button id="ai-send-btn" class="ai-send-btn" type="submit" aria-label="发送">➤</button>
+                  </div>
+                </div>
+              </form>
+            </section>
           </div>
         </div>
       </section>
@@ -213,6 +294,55 @@
       <button class="close-btn" aria-label="关闭">&times;</button>
       <div id="detail-content"></div>
     </div>
+  </div>
+
+  <div class="modal" id="ai-settings-modal">
+    <form class="modal-content ai-settings-content" id="ai-settings-form">
+      <button class="close-btn ai-settings-close" type="button" aria-label="关闭">&times;</button>
+      <h2>API 设置</h2>
+      <p class="ai-settings-note">自带 API Key 仅保存在当前浏览器本地；使用代理转发时，Key 只随本次请求发送，不会在本站保存。</p>
+
+      <div class="ai-settings-grid">
+        <label class="ai-setting-field">
+          <span>API 模式</span>
+          <select id="ai-api-mode">
+            <option value="mock">默认 Mock</option>
+            <option value="byok">自带 API Key</option>
+          </select>
+        </label>
+
+        <label class="ai-setting-field">
+          <span>服务商</span>
+          <select id="ai-provider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="openai">ChatGPT / OpenAI</option>
+            <option value="anthropic">Claude</option>
+            <option value="gemini">Gemini</option>
+            <option value="custom">自定义 OpenAI 兼容</option>
+          </select>
+        </label>
+
+        <label class="ai-setting-field wide">
+          <span>API URL</span>
+          <input id="ai-api-url" type="url" placeholder="https://api.deepseek.com/chat/completions">
+        </label>
+
+        <label class="ai-setting-field">
+          <span>模型名</span>
+          <input id="ai-api-model" type="text" placeholder="deepseek-chat">
+        </label>
+
+        <label class="ai-setting-field">
+          <span>API Key</span>
+          <input id="ai-api-key" type="password" placeholder="sk-...">
+        </label>
+      </div>
+
+      <div class="ai-settings-actions">
+        <button id="ai-clear-settings" class="ghost-btn" type="button">清除配置</button>
+        <button class="secondary-btn" type="submit">保存设置</button>
+      </div>
+    </form>
   </div>
 
   <script src="app.js"></script>
