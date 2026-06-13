@@ -41,7 +41,8 @@ const AI_MODEL_OPTIONS = {
   "deepseek-chat": { provider: "deepseek", model: "deepseek-chat", label: "DeepSeek" },
   "claude-sonnet": { provider: "anthropic", model: "claude-sonnet-4-5-20250929", label: "Claude" },
   "gemini-flash": { provider: "gemini", model: "gemini-2.5-flash", label: "Gemini" },
-  "gpt-4o": { provider: "openai", model: "gpt-4o", label: "ChatGPT" }
+  "gpt-4o": { provider: "openai", model: "gpt-4o", label: "ChatGPT" },
+  "catgirl": { provider: "deepseek", model: "deepseek-chat", label: "猫娘", promptStyle: "catgirl" }
 };
 const AI_PROVIDER_DEFAULTS = {
   deepseek: {
@@ -210,11 +211,11 @@ async function fetchLatestByType(type) {
   try {
     const response = await fetch(`${API_URL}?type=${type}&page=1&limit=1`);
     const data = await response.json();
-    const raw = data.last || data.data?.last || extractList(data)[0];
+    const raw = data.last || data.data?.last || extractList(data)[0] || getFallbackRawList(config.type, 1)[0];
     return mapResult(raw, config, type);
   } catch (error) {
     console.error("获取最新开奖失败:", error);
-    return null;
+    return mapResult(getFallbackRawList(config.type, 1)[0], config, type);
   }
 }
 
@@ -1220,7 +1221,8 @@ function getAIRequestConfig() {
     return {
       mode: "server",
       provider: modelConfig.provider,
-      model: modelConfig.model
+      model: modelConfig.model,
+      promptStyle: modelConfig.promptStyle || "default"
     };
   }
 
@@ -1229,7 +1231,8 @@ function getAIRequestConfig() {
     provider: aiUserConfig.provider,
     model: aiUserConfig.model || modelConfig.model,
     apiUrl: aiUserConfig.apiUrl,
-    apiKey: aiUserConfig.apiKey
+    apiKey: aiUserConfig.apiKey,
+    promptStyle: modelConfig.promptStyle || "default"
   };
 }
 
@@ -1247,8 +1250,15 @@ function normalizeAIReply(data, fallbackText) {
   };
 }
 
+async function getAIRecentResults() {
+  if (trendRows.length >= 100) return trendRows.slice(0, 100);
+  const rows = await fetchTrend(100);
+  return rows.slice(0, 100);
+}
+
 async function requestAIReply(text) {
   const aiRequestConfig = getAIRequestConfig();
+  const recentResults = await getAIRecentResults();
   const response = await fetch("/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1257,7 +1267,7 @@ async function requestAIReply(text) {
       lotteryType: currentType,
       lotteryName: LOTTERY_CONFIG[currentType].name,
       ...aiRequestConfig,
-      recentResults: trendRows.slice(0, 50)
+      recentResults
     })
   });
 
