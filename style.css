@@ -861,9 +861,10 @@ select:focus {
 .ai-input-bar {
   position: sticky;
   bottom: 0;
-  padding: 16px;
+  z-index: 2;
+  padding: 14px 16px 16px;
   border-top: 1px solid var(--border);
-  background: #fff;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92), #fff 34%);
 }
 
 .ai-input-shell {

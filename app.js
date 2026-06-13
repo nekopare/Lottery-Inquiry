@@ -1248,10 +1248,6 @@ function normalizeAIReply(data, fallbackText) {
 }
 
 async function requestAIReply(text) {
-  if (aiUserConfig.mode !== "byok") {
-    throw new Error("未启用自带 API Key，使用本地模拟回复");
-  }
-
   const aiRequestConfig = getAIRequestConfig();
   const response = await fetch("/api/chat", {
     method: "POST",

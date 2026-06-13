@@ -73,9 +73,15 @@ function buildSystemPrompt({ lotteryName, lotteryType, recentResults }) {
   ].join("\n");
 }
 
+function getProviderApiKey(provider) {
+  const config = PROVIDER_CONFIG[provider];
+  return (config ? process.env[config.envKey] : "") || process.env.AI_API_KEY || "";
+}
+
 function normalizeModel(provider, requestedModel) {
-  const config = PROVIDER_CONFIG[provider] || PROVIDER_CONFIG.deepseek;
-  return process.env[config.modelEnv] || requestedModel || config.defaultModel;
+  const config = PROVIDER_CONFIG[provider];
+  if (!config) return process.env.AI_MODEL || requestedModel || "";
+  return process.env[config.modelEnv] || process.env.AI_MODEL || requestedModel || config.defaultModel;
 }
 
 function normalizeEndpoint(provider, apiUrl) {
@@ -240,7 +246,7 @@ module.exports = async function handler(req, res) {
     const provider = (PROVIDER_CONFIG[body.provider] || body.provider === "custom") ? body.provider : "deepseek";
     const config = PROVIDER_CONFIG[provider];
     const userApiKey = String(body.apiKey || "").trim();
-    const apiKey = userApiKey || (config ? process.env[config.envKey] : "");
+    const apiKey = userApiKey || getProviderApiKey(provider);
     const apiUrl = String(body.apiUrl || "").trim();
     if (provider === "custom" && !apiUrl) {
       json(res, 400, { error: "自定义 API 必须填写 API URL" });
@@ -248,7 +254,8 @@ module.exports = async function handler(req, res) {
     }
 
     if (!apiKey) {
-      json(res, 503, { error: config ? `缺少环境变量 ${config.envKey} 或用户 API Key` : "缺少用户 API Key" });
+      const envLabel = config ? `${config.envKey} 或 AI_API_KEY` : "AI_API_KEY";
+      json(res, 503, { error: `缺少环境变量 ${envLabel} 或用户 API Key` });
       return;
     }
 
@@ -258,9 +265,7 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const model = provider === "custom"
-      ? String(body.model || "").trim()
-      : normalizeModel(provider, body.model);
+    const model = normalizeModel(provider, String(body.model || "").trim());
     if (!model) {
       json(res, 400, { error: "缺少模型名" });
       return;
