@@ -34,9 +34,13 @@ let statArea = "front";
 let missArea = "front";
 let currentAnalysis = "trend";
 let statsPeriod = 10;
-let aiMessages = [];
+const AI_CHAT_STORAGE_KEY = "lottery-ai-chat-messages-v1";
+const AI_CHAT_MAX_MESSAGES = 40;
+const AI_CATGIRL_CHAT_STORAGE_KEY = "lottery-ai-catgirl-chat-enabled";
+let aiMessages = loadAIChatMessages();
 let aiThinking = false;
 let aiSelectedHistory = 0;
+let aiCatgirlLotteryPendingText = "";
 const AI_MODEL_OPTIONS = {
   "deepseek-chat": { provider: "deepseek", model: "deepseek-chat", label: "DeepSeek" },
   "claude-sonnet": { provider: "anthropic", model: "claude-sonnet-4-5-20250929", label: "Claude" },
@@ -68,6 +72,7 @@ const AI_PROVIDER_DEFAULTS = {
 };
 let aiSelectedModel = localStorage.getItem("lottery-ai-model") || "deepseek-chat";
 if (!AI_MODEL_OPTIONS[aiSelectedModel]) aiSelectedModel = "deepseek-chat";
+let aiCatgirlChatEnabled = localStorage.getItem(AI_CATGIRL_CHAT_STORAGE_KEY) === "1";
 let aiUserConfig = loadAIUserConfig();
 let trendPanelState = {
   width: 0,
@@ -1132,39 +1137,191 @@ function getMessageTime() {
   return `${pad(now.getHours())}:${pad(now.getMinutes())}`;
 }
 
+function normalizeSavedAIMessage(message) {
+  if (!message || (message.role !== "user" && message.role !== "ai")) return null;
+  const text = typeof message.text === "string" ? message.text : "";
+  if (!text.trim()) return null;
+  return {
+    role: message.role,
+    time: typeof message.time === "string" ? message.time : getMessageTime(),
+    text,
+    summary: Array.isArray(message.summary) ? message.summary.filter((item) => typeof item === "string") : [],
+    card: typeof message.card === "string" ? message.card : "",
+    plain: message.plain === true
+  };
+}
+
+function loadAIChatMessages() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AI_CHAT_STORAGE_KEY) || "[]");
+    if (!Array.isArray(saved)) return [];
+    return saved
+      .map(normalizeSavedAIMessage)
+      .filter(Boolean)
+      .slice(-AI_CHAT_MAX_MESSAGES);
+  } catch {
+    return [];
+  }
+}
+
+function saveAIChatMessages() {
+  const messages = aiMessages
+    .map(normalizeSavedAIMessage)
+    .filter(Boolean)
+    .slice(-AI_CHAT_MAX_MESSAGES);
+  aiMessages = messages;
+  localStorage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(messages));
+}
+
+function clearAIChatMessages() {
+  aiMessages = [];
+  localStorage.removeItem(AI_CHAT_STORAGE_KEY);
+}
+
 function getMockPredictionIssue() {
   const latest = trendRows[0]?.issue || (currentType === "dlt" ? "26063" : "2026063");
   const next = Number(latest) + 1;
   return Number.isFinite(next) ? String(next).padStart(latest.length, "0") : latest;
 }
 
-function renderAIPredictionCard(prediction = null) {
-  const front = prediction?.front || (currentType === "dlt" ? ["03", "15", "21", "29", "33"] : ["03", "08", "15", "21", "26", "31"]);
-  const back = prediction?.back || (currentType === "dlt" ? ["06", "11"] : ["10"]);
+function getDefaultAIPredictions() {
+  if (currentType === "ssq") {
+    return [
+      { front: ["03", "08", "15", "21", "26", "31"], back: ["10"] },
+      { front: ["01", "06", "12", "18", "24", "33"], back: ["07"] },
+      { front: ["04", "09", "14", "20", "27", "32"], back: ["12"] },
+      { front: ["02", "11", "16", "22", "25", "30"], back: ["05"] },
+      { front: ["05", "10", "13", "19", "28", "29"], back: ["15"] }
+    ];
+  }
+  return [
+    { front: ["03", "15", "21", "29", "33"], back: ["06", "11"] },
+    { front: ["04", "12", "18", "25", "34"], back: ["03", "09"] },
+    { front: ["05", "11", "19", "23", "30"], back: ["02", "07"] },
+    { front: ["08", "13", "16", "22", "28"], back: ["06", "10"] },
+    { front: ["09", "17", "24", "31", "35"], back: ["04", "12"] }
+  ];
+}
+
+function normalizeCardPredictionList(predictions = null) {
+  const source = Array.isArray(predictions)
+    ? predictions
+    : predictions
+      ? [predictions]
+      : getDefaultAIPredictions();
+  return source
+    .filter((item) => Array.isArray(item.front) && Array.isArray(item.back))
+    .slice(0, 10);
+}
+
+function renderAIPredictionCard(predictions = null) {
+  const list = normalizeCardPredictionList(predictions);
+  const mainLabel = currentType === "ssq" ? "红球" : "前区";
+  const subLabel = currentType === "ssq" ? "蓝球" : "后区";
   return `
     <div class="ai-prediction-card">
-      <div class="ai-card-title">预测号码</div>
+      <div class="ai-card-title">预测号码${list.length > 1 ? `（${list.length}注）` : ""}</div>
       <p class="ai-issue">🎯 预测期号：第 ${getMockPredictionIssue()} 期</p>
-      <div class="ai-ball-row">
-        <span class="ai-ball-label">前区（${front.length}个号）</span>
-        <div class="ai-balls">${front.map((num) => `<span class="ai-ball red">${num}</span>`).join("")}</div>
-      </div>
-      <div class="ai-card-divider"></div>
-      <div class="ai-ball-row">
-        <span class="ai-ball-label">后区（${back.length}个号）</span>
-        <div class="ai-balls">${back.map((num) => `<span class="ai-ball blue">${num}</span>`).join("")}</div>
-      </div>
+      ${list.map((item, index) => `
+        <div class="ai-prediction-group">
+          <div class="ai-prediction-group-title">第 ${index + 1} 注</div>
+          <div class="ai-ball-row">
+            <span class="ai-ball-label">${mainLabel}（${item.front.length}个号）</span>
+            <div class="ai-balls">${item.front.map((num) => `<span class="ai-ball red">${escapeHtml(num)}</span>`).join("")}</div>
+          </div>
+          <div class="ai-ball-row">
+            <span class="ai-ball-label">${subLabel}（${item.back.length}个号）</span>
+            <div class="ai-balls">${item.back.map((num) => `<span class="ai-ball blue">${escapeHtml(num)}</span>`).join("")}</div>
+          </div>
+          ${item.reason ? `<p class="ai-prediction-reason">${escapeHtml(item.reason)}</p>` : ""}
+        </div>
+      `).join("")}
       <p class="ai-disclaimer">⚠️ 以上预测结果仅供参考，购彩有风险，投注需谨慎！</p>
     </div>
   `;
 }
 
+function stripMarkdown(value) {
+  return String(value)
+    .replace(/[#*_>`~-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function truncateText(value, maxLength = 72) {
+  const text = stripMarkdown(value);
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function buildFallbackAISummary(text, predictions = []) {
+  const lines = String(text || "")
+    .split(/\n+/)
+    .map((line) => stripMarkdown(line))
+    .filter(Boolean);
+  const summary = [];
+  const dataLine = lines.find((line) => /最近|数据|范围|第.*期/.test(line));
+  if (dataLine) summary.push(truncateText(dataLine, 64));
+  if (predictions.length) summary.push(`已生成 ${predictions.length} 注不同参考号码`);
+  const focusLines = lines.filter((line) => /冷热|区间|奇偶|大小|和值|胆码|杀号|012|五行/.test(line));
+  focusLines.forEach((line) => {
+    if (summary.length < 4) summary.push(truncateText(line, 64));
+  });
+  if (!summary.length && lines[0]) summary.push(truncateText(lines[0], 64));
+  return summary.slice(0, 4);
+}
+
+function renderAISummaryCard(summary = [], predictions = []) {
+  const items = Array.isArray(summary) && summary.length
+    ? summary
+    : buildFallbackAISummary("", predictions);
+  if (!items.length) return "";
+  return `
+    <div class="ai-summary-card">
+      <div class="ai-summary-title">AI 总结</div>
+      <div class="ai-summary-list">
+        ${items.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function formatInlineMarkdown(value) {
+  return escapeHtml(value).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+}
+
+function renderAIFormattedText(text) {
+  const blocks = String(text || "")
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (!blocks.length) return "";
+  return blocks.map((line) => {
+    if (/^#{1,4}\s+/.test(line)) {
+      return `<h4>${formatInlineMarkdown(line.replace(/^#{1,4}\s+/, ""))}</h4>`;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      return `<p class="ai-analysis-list-item">${formatInlineMarkdown(line.replace(/^[-*]\s+/, ""))}</p>`;
+    }
+    return `<p>${formatInlineMarkdown(line)}</p>`;
+  }).join("");
+}
+
 function createMockAIReply(text) {
   const cleanText = text.trim();
+  if (aiSelectedModel === "catgirl" && aiCatgirlChatEnabled) {
+    return {
+      role: "ai",
+      time: getMessageTime(),
+      text: `Neko收到啦喵～${cleanText ? "主人刚刚说的，人家有在认真听。" : "主人想聊什么都可以。"}（尾巴轻轻晃）`,
+      plain: true
+    };
+  }
+
   if (cleanText.includes("预测")) {
     return {
       role: "ai",
       time: getMessageTime(),
+      summary: ["已生成多组参考号码", "号码仅作历史统计娱乐参考"],
       text: `好的！我将基于最近的开奖数据和算法模型，为您预测下一期${LOTTERY_CONFIG[currentType].name}号码。`,
       card: renderAIPredictionCard()
     };
@@ -1183,6 +1340,117 @@ function createMockAIReply(text) {
     time: getMessageTime(),
     text: `我已收到你的问题。当前可以围绕历史开奖规律、号码分布、冷热号、奇偶比、大小比和值区间做模拟分析，并生成多组参考方案。`
   };
+}
+
+function setCatgirlChatMode(enabled) {
+  aiCatgirlChatEnabled = enabled;
+  aiCatgirlLotteryPendingText = "";
+  localStorage.setItem(AI_CATGIRL_CHAT_STORAGE_KEY, enabled ? "1" : "0");
+  if (enabled) {
+    aiSelectedModel = "catgirl";
+    localStorage.setItem("lottery-ai-model", aiSelectedModel);
+    const select = document.getElementById("ai-model-select");
+    if (select) select.value = aiSelectedModel;
+  }
+}
+
+function isCatgirlChatActive() {
+  return aiSelectedModel === "catgirl" && aiCatgirlChatEnabled;
+}
+
+function isLotteryRelatedText(text) {
+  return /彩票|大乐透|双色球|开奖|开奖号码|号码|预测|走势|冷热|和值|奇偶|大小|前区|后区|红球|蓝球|期号|杀号|胆码|拖码|投注|中奖|分析|[0-9一二三四五六七八九十]+注/.test(text);
+}
+
+function isAffirmativeText(text) {
+  return /^(是|是的|对|对的|嗯|嗯嗯|好|好的|可以|行|确认|要|帮我分析|分析吧|开始分析|切换|切吧|关|关了)$/i.test(text.trim());
+}
+
+function isNegativeText(text) {
+  return /^(不|不是|不用|不要|算了|先不|别|取消|继续聊天|聊聊天|不用分析)$/i.test(text.trim());
+}
+
+function pushAIPlainMessage(text) {
+  aiMessages.push({
+    role: "ai",
+    time: getMessageTime(),
+    text,
+    plain: true
+  });
+}
+
+function handleAICommand(content) {
+  const normalized = content.trim().replace(/^／/, "/");
+  if (normalized !== "/猫娘聊天开" && normalized !== "/猫娘聊天关") return false;
+
+  const enabled = normalized === "/猫娘聊天开";
+  setCatgirlChatMode(enabled);
+  aiMessages.push({ role: "user", time: getMessageTime(), text: content });
+  aiMessages.push({
+    role: "ai",
+    time: getMessageTime(),
+    text: enabled
+      ? "猫娘聊天已开启喵～现在Neko只陪主人闲聊，不会主动把话题拉回彩票啦。"
+      : "猫娘聊天已关闭喵～Neko恢复成彩票分析猫娘模式啦。",
+    plain: true
+  });
+  saveAIChatMessages();
+  renderAIChat();
+  return true;
+}
+
+function handleCatgirlLotteryGate(content) {
+  if (!isCatgirlChatActive()) return false;
+
+  if (aiCatgirlLotteryPendingText) {
+    aiMessages.push({ role: "user", time: getMessageTime(), text: content });
+    if (isAffirmativeText(content)) {
+      const pendingText = aiCatgirlLotteryPendingText;
+      aiCatgirlLotteryPendingText = "";
+      setCatgirlChatMode(false);
+      pushAIPlainMessage("好喵～Neko切回彩票分析模式，马上帮主人认真看数据。");
+      saveAIChatMessages();
+      renderAIChat();
+      window.setTimeout(() => sendAIMessage(pendingText, { skipCatgirlGate: true, appendUser: false }), 0);
+      return true;
+    }
+    if (isNegativeText(content)) {
+      aiCatgirlLotteryPendingText = "";
+      pushAIPlainMessage("知道啦喵～那Neko继续陪主人聊天，不碰彩票数据。");
+      saveAIChatMessages();
+      renderAIChat();
+      return true;
+    }
+    pushAIPlainMessage("主人是要Neko切回彩票分析吗？回复“是”或“不用”就好喵～");
+    saveAIChatMessages();
+    renderAIChat();
+    return true;
+  }
+
+  if (!isLotteryRelatedText(content)) return false;
+
+  aiCatgirlLotteryPendingText = content;
+  aiMessages.push({ role: "user", time: getMessageTime(), text: content });
+  pushAIPlainMessage("Neko听到彩票相关的话题啦～要我帮主人分析彩票数据吗？回复“是”我就切回分析模式喵。");
+  saveAIChatMessages();
+  renderAIChat();
+  return true;
+}
+
+function handleCatgirlWelcomeAction(action) {
+  if (action === "chat") {
+    setCatgirlChatMode(true);
+    aiMessages.push({ role: "user", time: getMessageTime(), text: "聊聊天" });
+    pushAIPlainMessage("好呀主人～那Neko只陪你聊天喵！（尾巴摇摇）");
+    saveAIChatMessages();
+    renderAIChat();
+    return;
+  }
+
+  if (action === "analysis") {
+    setCatgirlChatMode(false);
+    sendAIMessage(`帮我分析${LOTTERY_CONFIG[currentType].name}数据`);
+  }
 }
 
 function delay(ms) {
@@ -1217,12 +1485,15 @@ function saveAIUserConfig(config) {
 
 function getAIRequestConfig() {
   const modelConfig = getSelectedAIModelConfig();
+  const promptStyle = modelConfig.promptStyle === "catgirl" && aiCatgirlChatEnabled
+    ? "catgirlChat"
+    : modelConfig.promptStyle || "default";
   if (aiUserConfig.mode !== "byok") {
     return {
       mode: "server",
       provider: modelConfig.provider,
       model: modelConfig.model,
-      promptStyle: modelConfig.promptStyle || "default"
+      promptStyle
     };
   }
 
@@ -1232,7 +1503,7 @@ function getAIRequestConfig() {
     model: aiUserConfig.model || modelConfig.model,
     apiUrl: aiUserConfig.apiUrl,
     apiKey: aiUserConfig.apiKey,
-    promptStyle: modelConfig.promptStyle || "default"
+    promptStyle
   };
 }
 
@@ -1246,7 +1517,13 @@ function normalizeAIReply(data, fallbackText) {
     role: "ai",
     time: getMessageTime(),
     text: data.reply,
-    card: data.prediction ? renderAIPredictionCard(data.prediction) : ""
+    summary: data.summary || buildFallbackAISummary(data.reply, data.predictions || []),
+    plain: data.plain === true,
+    card: data.predictions?.length
+      ? renderAIPredictionCard(data.predictions)
+      : data.prediction
+        ? renderAIPredictionCard(data.prediction)
+        : ""
   };
 }
 
@@ -1279,7 +1556,31 @@ async function requestAIReply(text) {
   return response.json();
 }
 
+function renderCatgirlWelcome() {
+  return `
+    <div class="ai-welcome catgirl">
+      <div class="ai-hero-row">
+        <div class="ai-avatar large">🤖</div>
+        <div>
+          <h2>主人好喵～</h2>
+          <p>（尾巴摇摇）Neko 刚吃完小鱼干，心情不错～</p>
+        </div>
+      </div>
+      <div class="ai-feature-card ai-catgirl-choice-card">
+        <div>是想聊聊天，还是让我帮你分析${LOTTERY_CONFIG[currentType].name}数据？喵！</div>
+      </div>
+      <div class="ai-quick-title">选择一个模式：</div>
+      <div class="ai-quick-actions">
+        <button type="button" data-ai-catgirl-action="chat">聊聊天</button>
+        <button type="button" data-ai-catgirl-action="analysis">分析彩票数据</button>
+      </div>
+    </div>
+  `;
+}
+
 function renderAIWelcome() {
+  if (aiSelectedModel === "catgirl") return renderCatgirlWelcome();
+
   return `
     <div class="ai-welcome">
       <div class="ai-hero-row">
@@ -1321,13 +1622,36 @@ function renderAIMessage(message) {
     `;
   }
 
+  const formattedText = renderAIFormattedText(message.text);
+  if (message.plain) {
+    return `
+      <div class="ai-message-row ai">
+        <div class="ai-avatar small">🤖</div>
+        <div class="ai-message-stack">
+          <div class="ai-bubble ai">
+            <div class="ai-analysis-body">${formattedText}</div>
+          </div>
+          <time>${message.time}</time>
+        </div>
+      </div>
+    `;
+  }
+
+  const shouldCollapse = formattedText.length > 1200 || message.card;
+  const summaryItems = message.summary?.length
+    ? message.summary
+    : buildFallbackAISummary(message.text, []);
+
   return `
     <div class="ai-message-row ai">
       <div class="ai-avatar small">🤖</div>
       <div class="ai-message-stack">
         <div class="ai-bubble ai">
-          <p>${escapeHtml(message.text)}</p>
+          ${renderAISummaryCard(summaryItems)}
           ${message.card || ""}
+          ${shouldCollapse
+            ? `<details class="ai-analysis-details"><summary>完整分析</summary><div class="ai-analysis-body">${formattedText}</div></details>`
+            : `<div class="ai-analysis-body">${formattedText}</div>`}
         </div>
         <time>${message.time}</time>
       </div>
@@ -1365,15 +1689,21 @@ function setAISendState() {
   send.classList.toggle("ready", input.value.trim().length > 0);
 }
 
-async function sendAIMessage(text) {
+async function sendAIMessage(text, options = {}) {
   const content = text.trim();
   if (!content || aiThinking) return;
   const input = document.getElementById("ai-message-input");
   if (input) input.value = "";
   setAISendState();
 
-  aiMessages.push({ role: "user", time: getMessageTime(), text: content });
-  renderAIChat();
+  if (handleAICommand(content)) return;
+  if (!options.skipCatgirlGate && handleCatgirlLotteryGate(content)) return;
+
+  if (options.appendUser !== false) {
+    aiMessages.push({ role: "user", time: getMessageTime(), text: content });
+    saveAIChatMessages();
+    renderAIChat();
+  }
 
   await delay(1200);
   aiThinking = true;
@@ -1383,10 +1713,12 @@ async function sendAIMessage(text) {
     const data = await requestAIReply(content);
     await delay(800);
     aiMessages.push(normalizeAIReply(data, content));
+    saveAIChatMessages();
   } catch (error) {
     console.warn("AI 接口不可用，使用本地模拟回复:", error);
     await delay(800);
     aiMessages.push(createMockAIReply(content));
+    saveAIChatMessages();
   } finally {
     aiThinking = false;
     renderAIChat();
@@ -1407,6 +1739,7 @@ function initAIModelSelect() {
   select.addEventListener("change", () => {
     aiSelectedModel = AI_MODEL_OPTIONS[select.value] ? select.value : "deepseek-chat";
     localStorage.setItem("lottery-ai-model", aiSelectedModel);
+    if (currentAnalysis === "ai" && !aiMessages.length) renderAIChat();
   });
 }
 
@@ -1558,7 +1891,7 @@ function initEventListeners() {
   initAISettings();
 
   document.getElementById("ai-clear-history").addEventListener("click", () => {
-    aiMessages = [];
+    clearAIChatMessages();
     aiThinking = false;
     renderAIChat();
   });
@@ -1571,6 +1904,12 @@ function initEventListeners() {
   document.getElementById("ai-message-input").addEventListener("input", setAISendState);
 
   document.getElementById("ai-chat-content").addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-ai-catgirl-action]");
+    if (actionButton) {
+      handleCatgirlWelcomeAction(actionButton.dataset.aiCatgirlAction);
+      return;
+    }
+
     const button = event.target.closest("[data-ai-prompt]");
     if (!button) return;
     sendAIMessage(button.dataset.aiPrompt);

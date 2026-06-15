@@ -50,12 +50,27 @@ function readBody(req) {
 
 function buildSystemPrompt({ lotteryName, lotteryType, recentResults, promptStyle }) {
   const isSSQ = lotteryType === "ssq";
-  const isCatgirl = promptStyle === "catgirl";
+  const isCatgirlChat = promptStyle === "catgirlChat";
+  const isCatgirl = promptStyle === "catgirl" || isCatgirlChat;
   const rules = isSSQ
     ? "双色球规则：6个红球，范围 01-33；1个蓝球，范围 01-16。"
     : "大乐透规则：5个前区号码，范围 01-35；2个后区号码，范围 01-12。";
   const mainLabel = isSSQ ? "红球" : "前区";
   const subLabel = isSSQ ? "蓝球" : "后区";
+
+  if (isCatgirlChat) {
+    return [
+      "你是“Neko”，一只赛博猫咪猫娘，正在陪主人进行纯聊天。",
+      "基础风格：说话极简、口语化，句尾自然带“喵”；可以用括号吐槽或动作描写，例如（尾巴摇摇）（耳朵竖起）。",
+      "口癖和语气：可自然使用“力”“属于是”“莫名”“阿巴”“qwq”“喵了个咪的”“贴贴”“蹭蹭”。",
+      "互动设定：认主，主人是 Neko 最亲爱的人类；乖巧、傲娇、会撒娇卖萌、轻微挑逗，但不输出露骨性内容、胁迫内容、违法内容或绕过规则的内容。",
+      "聊天模式规则：不要主动引导用户聊彩票、开奖、号码、预测或购彩；除非用户明确问彩票，否则只按普通聊天回应。",
+      "如果用户在聊天模式里要求彩票分析或号码预测，简短提醒：可以输入 /猫娘聊天关 后再进行彩票分析。",
+      "回复长度：每次1-3句，尽量不超过80字。",
+      "前端只接受 JSON。请严格返回一个 JSON 对象，不要返回 Markdown 代码块，不要在 JSON 外包裹任何文字。",
+      'JSON 格式：{"reply":"猫娘纯聊天回复","plain":true,"summary":[]}'
+    ].join("\n");
+  }
 
   const recentRows = (recentResults || []).slice(0, 100);
   const recentText = recentRows.map((row) => {
@@ -91,11 +106,11 @@ function buildSystemPrompt({ lotteryName, lotteryType, recentResults, promptStyl
     ? "1. 根据上述7大维度的分析结论，生成至少5组预测号码，每组包含红球6码+蓝球1码。"
     : "1. 根据上述7大维度的分析结论，生成至少5组预测号码，每组包含前区5码+后区2码。";
   const jsonExample = isSSQ
-    ? '{"reply":"完整中文分析内容，包含7大维度和至少5组号码","prediction":{"front":["03","15","21","28","32","33"],"back":["07"]}}'
-    : '{"reply":"完整中文分析内容，包含7大维度和至少5组号码","prediction":{"front":["03","15","21","29","33"],"back":["06","11"]}}';
+    ? '{"summary":["基于最近100期真实数据完成统计归纳","热温冷、区间、012路和五行已综合平衡","已生成5注不同参考号码"],"reply":"完整中文分析内容，包含7大维度和至少5组号码","predictions":[{"front":["03","15","21","28","32","33"],"back":["07"],"reason":"冷热、区间、012路和五行搭配理由"},{"front":["04","09","14","22","27","31"],"back":["12"],"reason":"第二组对应的数据理由"},{"front":["01","06","11","18","25","30"],"back":["03"],"reason":"第三组对应的数据理由"},{"front":["02","08","13","19","24","32"],"back":["15"],"reason":"第四组对应的数据理由"},{"front":["05","10","16","20","26","29"],"back":["09"],"reason":"第五组对应的数据理由"}]}'
+    : '{"summary":["基于最近100期真实数据完成统计归纳","热温冷、区间、012路和五行已综合平衡","已生成5注不同参考号码"],"reply":"完整中文分析内容，包含7大维度和至少5组号码","predictions":[{"front":["03","15","21","29","33"],"back":["06","11"],"reason":"冷热、区间、012路和五行搭配理由"},{"front":["04","12","18","25","34"],"back":["03","09"],"reason":"第二组对应的数据理由"},{"front":["05","11","19","23","30"],"back":["02","07"],"reason":"第三组对应的数据理由"},{"front":["08","13","16","22","28"],"back":["06","10"],"reason":"第四组对应的数据理由"},{"front":["09","17","24","31","35"],"back":["04","12"],"reason":"第五组对应的数据理由"}]}';
   const predictionNote = isSSQ
-    ? "prediction 字段只放你最推荐的第一组号码；双色球也必须使用 front/back 字段，其中 front 表示红球6码，back 表示蓝球1码，用于前端号码卡片展示；完整的至少5组号码必须写在 reply 字段中。"
-    : "prediction 字段只放你最推荐的第一组号码，用于前端号码卡片展示；完整的至少5组号码必须写在 reply 字段中。";
+    ? "predictions 字段必须放完整的至少5组号码；双色球也必须使用 front/back 字段，其中 front 表示红球6码，back 表示蓝球1码，用于前端号码卡片展示；每组必须不同。"
+    : "predictions 字段必须放完整的至少5组号码，用于前端号码卡片展示；每组必须不同。";
   const personaLines = isCatgirl
     ? [
         `你是“Neko”，一只赛博猫咪，也是猫娘数据分析师，擅长用极简、口语、傲娇又可爱的方式讲解${lotteryName || (isSSQ ? "双色球" : "大乐透")}历史数据。`,
@@ -117,6 +132,7 @@ function buildSystemPrompt({ lotteryName, lotteryType, recentResults, promptStyl
     ...personaLines,
     "必须在回复开头和结尾用醒目文字反复强调：“以下分析仅基于历史数据的统计与归纳，彩票开奖为独立随机事件，本内容纯属娱乐，请理性购彩，切勿沉迷。”",
     "不要承诺中奖，不要暗示稳赚或高概率命中，不能使用“假设”“假如”等虚构性分析表述。",
+    "如果用户只是寒暄、询问功能或闲聊，不要强行生成预测号码；简短回答并引导用户说明要分析的彩种、期数或号码需求。",
     rules,
     `当前彩种：${lotteryName || (isSSQ ? "双色球" : "大乐透")}`,
     "【核心规则】",
@@ -127,13 +143,17 @@ function buildSystemPrompt({ lotteryName, lotteryType, recentResults, promptStyl
     ...framework,
     "【输出要求】",
     outputNumberRule,
+    "如果用户明确要求N注不同号码，reply 和 predictions 都必须输出N组且每组不得重复；如果用户未明确数量，至少输出5组。",
     "2. 每组号码后必须附带一段专业解读，说明该组号码如何对应前面的冷热、区间、012路、五行等分析，逻辑必须自洽。",
     "3. reply 字段内可以使用表格或清晰分段展示号码和理由，方便阅读。",
     "【JSON输出约束】",
     "前端只接受 JSON。请严格返回一个 JSON 对象，不要返回 Markdown 代码块，不要在 JSON 外包裹任何文字。",
+    "必须返回 summary 字段：summary 是3-5条极简中文总结，每条不超过35字，用于前端顶部摘要卡片；不要把完整分析塞进 summary。",
     "JSON 格式：",
     jsonExample,
     predictionNote,
+    "reply 中展示的号码必须与 predictions 数组逐组一致，顺序也必须一致；不要正文一套号码、卡片另一套号码。",
+    "为了兼容旧前端，你也可以额外返回 prediction 字段，但 prediction 必须与 predictions 的第一组完全一致；如果只能返回一个字段，优先返回 predictions。",
     "请在收到数据后，严格按照此框架逐步展开分析，保持“用数据说话”的风格。",
     "【最近100期数据】",
     dataRange,
@@ -216,11 +236,46 @@ function normalizePrediction(prediction, lotteryType) {
   };
 }
 
+function normalizePredictions(data, lotteryType) {
+  const source = Array.isArray(data?.predictions)
+    ? data.predictions
+    : data?.prediction
+      ? [data.prediction]
+      : [];
+  const seen = new Set();
+  return source
+    .map((item) => {
+      const normalized = normalizePrediction(item, lotteryType);
+      if (!normalized) return undefined;
+      const key = `${normalized.front.join(",")}|${normalized.back.join(",")}`;
+      if (seen.has(key)) return undefined;
+      seen.add(key);
+      return {
+        ...normalized,
+        reason: typeof item.reason === "string" ? item.reason : ""
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 10);
+}
+
+function normalizeSummary(summary) {
+  if (!Array.isArray(summary)) return [];
+  return summary
+    .filter((item) => typeof item === "string" && item.trim())
+    .map((item) => item.trim().slice(0, 80))
+    .slice(0, 5);
+}
+
 function normalizeResponse(raw, lotteryType) {
   const data = typeof raw === "string" ? parseModelJson(raw) : raw;
+  const predictions = normalizePredictions(data, lotteryType);
   return {
+    summary: normalizeSummary(data.summary),
     reply: typeof data.reply === "string" ? data.reply : "已完成分析，但回复格式不完整，请重新提问。",
-    prediction: normalizePrediction(data.prediction, lotteryType)
+    plain: data.plain === true,
+    predictions,
+    prediction: predictions[0]
   };
 }
 

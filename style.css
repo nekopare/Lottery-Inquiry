@@ -659,6 +659,17 @@ select:focus {
   color: var(--primary);
 }
 
+.ai-welcome.catgirl .ai-feature-card {
+  width: min(460px, calc(100% - 92px));
+}
+
+.ai-catgirl-choice-card {
+  border-color: #ffe0e4;
+  background: #fff7f8;
+  color: #435067;
+  font-weight: 700;
+}
+
 .ai-quick-title {
   margin-left: 92px;
   color: var(--muted);
@@ -745,6 +756,94 @@ select:focus {
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
 }
 
+.ai-summary-card {
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  border: 1px solid #ffe0e4;
+  border-radius: 14px;
+  background: #fff7f8;
+}
+
+.ai-summary-title {
+  margin-bottom: 8px;
+  color: var(--primary);
+  font-weight: 900;
+}
+
+.ai-summary-list {
+  display: grid;
+  gap: 6px;
+}
+
+.ai-summary-list span {
+  position: relative;
+  padding-left: 16px;
+  color: #435067;
+  line-height: 1.55;
+}
+
+.ai-summary-list span::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.ai-analysis-details {
+  margin-top: 12px;
+  border-top: 1px solid #eef1f5;
+}
+
+.ai-analysis-details summary {
+  padding: 12px 0 4px;
+  color: var(--primary);
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.ai-analysis-body {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  color: #3f4858;
+}
+
+.ai-analysis-body h4 {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.ai-analysis-body p {
+  margin: 0;
+}
+
+.ai-analysis-body strong {
+  color: var(--text-primary);
+  font-weight: 900;
+}
+
+.ai-analysis-list-item {
+  position: relative;
+  padding-left: 16px;
+}
+
+.ai-analysis-list-item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.75em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
 .ai-user-avatar {
   display: grid;
   place-items: center;
@@ -773,6 +872,23 @@ select:focus {
 
 .ai-issue {
   margin-bottom: 10px;
+}
+
+.ai-prediction-group {
+  padding: 12px 0;
+  border-top: 1px solid #eef1f5;
+}
+
+.ai-prediction-group:first-of-type {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.ai-prediction-group-title {
+  margin-bottom: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .ai-ball-row {
@@ -815,6 +931,13 @@ select:focus {
   height: 1px;
   margin: 12px 0;
   background: #eef1f5;
+}
+
+.ai-prediction-reason {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .ai-disclaimer {
