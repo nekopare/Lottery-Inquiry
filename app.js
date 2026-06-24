@@ -1262,7 +1262,7 @@ function buildFallbackAISummary(text, predictions = []) {
   const dataLine = lines.find((line) => /最近|数据|范围|第.*期/.test(line));
   if (dataLine) summary.push(truncateText(dataLine, 64));
   if (predictions.length) summary.push(`已生成 ${predictions.length} 注不同参考号码`);
-  const focusLines = lines.filter((line) => /冷热|区间|奇偶|大小|和值|胆码|杀号|012|五行/.test(line));
+  const focusLines = lines.filter((line) => /冷热|区间|奇偶|大小|和值|胆码|杀号|012/.test(line));
   focusLines.forEach((line) => {
     if (summary.length < 4) summary.push(truncateText(line, 64));
   });
@@ -1314,6 +1314,17 @@ function createMockAIReply(text) {
       time: getMessageTime(),
       text: `Neko收到啦喵～${cleanText ? "主人刚刚说的，人家有在认真听。" : "主人想聊什么都可以。"}（尾巴轻轻晃）`,
       plain: true
+    };
+  }
+
+  if (/复式|复试|胆拖/.test(cleanText)) {
+    const planName = /胆拖/.test(cleanText) ? "胆拖" : "复式";
+    return {
+      role: "ai",
+      time: getMessageTime(),
+      summary: [`已生成${planName}参考方案`, "号码卡片按标准单注展开", "每组均为5前区+2后区"],
+      text: `以下是${LOTTERY_CONFIG[currentType].name}${planName}参考方案。复式/胆拖可以在正文中展示候选池或胆码拖码，下面的预测号码卡片会按标准单注展开，保证每组都是${currentType === "dlt" ? "5个前区+2个后区" : "6个红球+1个蓝球"}。`,
+      card: renderAIPredictionCard()
     };
   }
 
