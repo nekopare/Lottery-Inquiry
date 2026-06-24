@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 
 const chatHandler = require("./api/chat");
+const lotteryHandler = require("./api/lottery");
 
 const root = __dirname;
 const port = Number(process.env.PORT || 8000);
@@ -62,6 +63,11 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === "/api/chat") {
     chatHandler(req, res);
+    return;
+  }
+
+  if (url.pathname === "/api/lottery") {
+    lotteryHandler(req, res);
     return;
   }
 

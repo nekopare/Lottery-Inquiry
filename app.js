@@ -1,4 +1,4 @@
-const API_URL = "https://api.huiniao.top/interface/home/lotteryHistory";
+const API_URL = "/api/lottery";
 
 const LOTTERY_CONFIG = {
   dlt: { name: "大乐透", type: "dlt", frontCount: 5, backCount: 2, frontMax: 35, backMax: 12, accent: "red" },
@@ -203,6 +203,7 @@ function formatDate(date) {
 async function fetchList(type, page = 1, limit = 20) {
   try {
     const response = await fetch(`${API_URL}?type=${type}&page=${page}&limit=${limit}`);
+    if (!response.ok) throw new Error(`开奖数据请求失败：${response.status}`);
     const data = await response.json();
     return extractList(data);
   } catch (error) {
@@ -215,6 +216,7 @@ async function fetchLatestByType(type) {
   const config = LOTTERY_CONFIG[type];
   try {
     const response = await fetch(`${API_URL}?type=${type}&page=1&limit=1`);
+    if (!response.ok) throw new Error(`最新开奖请求失败：${response.status}`);
     const data = await response.json();
     const raw = data.last || data.data?.last || extractList(data)[0] || getFallbackRawList(config.type, 1)[0];
     return mapResult(raw, config, type);
