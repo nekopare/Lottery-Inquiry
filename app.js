@@ -1344,7 +1344,7 @@ function createMockAIReply(text) {
     return {
       role: "ai",
       time: getMessageTime(),
-      text: `从近50期走势看，前区热号集中在 03、15、21、29 一带，冷号可重点观察 07、18、32。后区近期 06、11 活跃度较高，建议采用热号稳胆加冷号补位的组合思路。`
+      text: `从近100期走势看，前区热号集中在 03、15、21、29 一带，冷号可重点观察 07、18、32。后区近期 06、11 活跃度较高，建议采用热号稳胆加冷号补位的组合思路。`
     };
   }
 
@@ -1613,7 +1613,7 @@ function renderAIWelcome() {
       <div class="ai-quick-title">你可以尝试问我：</div>
       <div class="ai-quick-actions">
         <button type="button" data-ai-prompt="预测下期号码">🎯 预测下期号码</button>
-        <button type="button" data-ai-prompt="分析最近50期">⏱ 分析最近50期</button>
+        <button type="button" data-ai-prompt="分析最近100期">⏱ 分析最近100期</button>
         <button type="button" data-ai-prompt="生成5组方案">📋 生成5组方案</button>
         <button type="button" data-ai-prompt="冷热号分析">🔥 冷热号分析</button>
         <button type="button" data-ai-prompt="和值分析">✦ 和值分析</button>
