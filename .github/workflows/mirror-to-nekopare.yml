@@ -1,0 +1,45 @@
+name: Mirror to nekopare/Lottery-Inquiry
+
+on:
+  push:
+    branches:
+      - "**"
+    tags:
+      - "**"
+  workflow_dispatch:
+
+concurrency:
+  group: mirror-to-nekopare-lottery-inquiry
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mirror:
+    if: github.repository == 'QAQMOON/lottery-web-2'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          install -m 600 /dev/null ~/.ssh/nekopare_mirror_key
+          printf '%s\n' "${{ secrets.NEKOPARE_MIRROR_KEY }}" > ~/.ssh/nekopare_mirror_key
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+      - name: Mirror branches and tags
+        shell: bash
+        env:
+          SOURCE_REPO: QAQMOON/lottery-web-2
+          TARGET_REPO: nekopare/Lottery-Inquiry
+        run: |
+          set -euo pipefail
+          git clone --mirror "https://x-access-token:${{ github.token }}@github.com/${SOURCE_REPO}.git" repo.git
+          cd repo.git
+          GIT_SSH_COMMAND="ssh -i ~/.ssh/nekopare_mirror_key -o IdentitiesOnly=yes" \
+            git push --prune "git@github.com:${TARGET_REPO}.git" \
+              "+refs/heads/*:refs/heads/*" \
+              "+refs/tags/*:refs/tags/*"
